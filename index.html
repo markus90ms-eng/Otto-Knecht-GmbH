@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knecht In-App-Anzeige</title>
+<style>
+  :root {
+    --bezel-edge: #14181f;
+    --ink: #e9edf3;
+    --accent: #e0392c;
+    --pill-bg: rgba(10, 14, 20, 0.55);
+    --pill-border: rgba(233, 237, 243, 0.18);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    height: 100%;
+    background: var(--bezel-edge);
+  }
+
+  body {
+    min-height: 100dvh;
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+
+  .stage {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    background: var(--bezel-edge);
+    overflow: hidden;
+  }
+
+  .creative-link {
+    position: absolute;
+    inset: 0;
+    display: block;
+  }
+
+  .creative {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+</style>
+</head>
+<body>
+
+<!-- ======================================================
+     MUSTER — pro neuem Kunden nur 2 Dinge ändern:
+     1) motiv.png ersetzen (gleicher Dateiname, im Repo hochladen)
+     2) href unten auf die Ziel-Website des Kunden setzen
+     ====================================================== -->
+<div class="stage">
+  <a class="creative-link" href="https://www.knecht.de/de/betonfertigteilbauer.html" target="_blank" rel="noopener">
+    <img class="creative" src="motiv.png" alt="Anzeigenmotiv" />
+  </a>
+</div>
+
+</body>
+</html>
