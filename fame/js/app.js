@@ -1,14 +1,16 @@
 // Fame – App-Shell, Router und Screens.
 
 import {
-  TIERS, PIN_FROM, BOARD_SIZE, tierFor, nextTier, tierProgress, fmt, money,
+  TIERS, RARITIES, PIN_FROM, BOARD_SIZE, tierFor, nextTier, tierProgress, fmt, money,
   amountFromPos, posFromAmount, niceRound, rankFor, leaderboard, MAX_AMOUNT, MIN_AMOUNT,
 } from './data.js';
 import {
-  APP_NAME, esc, logo, logoInline, hl, dots, hero, button, diamondSvg, diamondShadowed, icons,
+  APP_NAME, LOGO_TEXT, esc, logo, dots, hero, button, backButton, diamondSvg, diamondShadowed,
+  itemTooltip, icons,
 } from './ui.js';
-import { tick, tierUp, fanfare, buzz } from './fx.js';
+import { tick, plink, rarityDrop, buzz, unlockAudio } from './fx.js';
 import { createDiamond } from './diamond3d.js';
+import { particles } from './particles.js';
 
 // ---- Zustand (lokal gespeichert, bis ein Backend existiert) -----------------
 
@@ -76,10 +78,12 @@ app.addEventListener('click', (e) => {
 });
 
 window.addEventListener('hashchange', render);
+unlockAudio();
 
 // ---- Kleine Helfer ----------------------------------------------------------
 
 function toast(msg) {
+  document.querySelectorAll('.toast').forEach((t) => t.remove());
   const el = document.createElement('div');
   el.className = 'toast';
   el.textContent = msg;
@@ -94,108 +98,200 @@ function toast(msg) {
 const firstName = (name) => (name || '').trim().split(/\s+/)[0];
 const cleanHandle = (h) => (h || '').trim().replace(/^@+/, '').replace(/\s+/g, '');
 
+// Mittelpunkt eines Elements relativ zu einem Canvas (für Funken-Explosionen).
+function centerIn(canvas, el) {
+  const a = canvas.getBoundingClientRect();
+  const b = el.getBoundingClientRect();
+  return [b.left + b.width / 2 - a.left, b.top + b.height / 2 - a.top];
+}
+
 // ---- Screens ----------------------------------------------------------------
 
 function splash() {
   return {
     html: `<section class="screen screen--splash">
+      <div class="sweep" aria-hidden="true"></div>
       <div class="splash-logo">${logo('lg')}</div>
-      <div class="screen-foot">
+      <div class="splash-space"></div>
+      <div class="splash-cta">
+        <a class="newhere" href="#/intro/1">
+          <span class="newhere-q">Neu hier?</span>
+          <span class="newhere-go">Zeig mir mehr <span aria-hidden="true">→</span></span>
+        </a>
         ${button('Login', 'data-go="login"')}
-        <a class="link" href="#/intro/1">Neu hier? Zeig mir mehr</a>
       </div>
+      <div class="splash-space splash-space--low"></div>
     </section>`,
   };
 }
 
+// 1. Loot-Drop: der Diamant fällt in einer Lichtsäule herunter.
 function intro1() {
+  const legendary = RARITIES[4];
   return {
-    html: `<section class="screen screen--intro1">
-      <div class="intro1-logo">${logo('lg')}</div>
-      <h1 class="claim">Zeig was Du dir <em>leisten kannst</em> und tue dabei gutes.</h1>
+    html: `<section class="screen screen--dark screen--loot1" style="--rar:${legendary.color}">
+      <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
+      <div class="loot1-logo">${logo('sm')}</div>
+      <div class="drop-stage">
+        <div class="beam" aria-hidden="true"></div>
+        <div class="drop-floor" aria-hidden="true"></div>
+        <div class="drop-gem" data-gem><div class="stage3d" data-diamond></div></div>
+        <div class="drop-label" data-label>[ Perfekter Diamant ]</div>
+      </div>
+      <h1 class="claim claim--loot">Zeig was Du dir <em>leisten kannst</em> und tue dabei <strong>gutes</strong>.</h1>
       <div class="screen-foot">
         ${dots(0)}
         ${button('Zeig mir mehr', 'data-go="intro/2"')}
-        <a class="link" href="#/login">registrier dich</a>
       </div>
     </section>`,
+    mount(el) {
+      const dia = createDiamond(el.querySelector('[data-diamond]'), { level: 4, glow: 0.9, rim: '#ff8a1f', interactive: false });
+      const canvas = el.querySelector('[data-fx]');
+      const fx = particles(canvas, { color: '#ff9a3c', mode: 'embers', density: 0.6 });
+      const gem = el.querySelector('[data-gem]');
+      const timer = setTimeout(() => {
+        rarityDrop(4);
+        dia.pulse();
+        const [x, y] = centerIn(canvas, gem);
+        fx.burst(x, y + 30, 60, '#ffb35c');
+        fx.setDensity(1.2);
+        el.classList.add('is-landed');
+      }, 820);
+      return () => { clearTimeout(timer); fx.dispose(); dia.dispose(); };
+    },
   };
 }
 
-// Bild-Karussell: jedes Bild gehört zu einem Aufzählungspunkt, der dann aktiv (schwarz) wird.
-const SLIDES = [
-  { img: 'assets/img/cash.jpg', alt: 'Ein Bündel Dollarscheine' },
-  { img: 'assets/img/ranking.jpg', alt: 'Siegerpodest mit Strichmännchen auf Platz 1' },
-  { img: 'assets/img/pin.jpg', alt: 'Neon-Hand mit Diamant' },
-  { img: 'assets/img/animals.jpg', alt: 'Hund und Katze auf dem Sofa' },
+// 2. Inventar: vier Belohnungen mit steigender Seltenheit, Tooltip wie bei Diablo.
+const LOOT = [
+  {
+    name: 'Bündel Ca$h', level: 0, icon: 'cash', img: 'assets/img/cash.jpg',
+    stats: ['Ca$h ist für dich nichts?', 'Beweise es und zeig´s der Welt'],
+    flavor: '„Geld hat jeder. Fame nicht.“',
+  },
+  {
+    name: 'Krone des Rankings', level: 2, icon: 'crown', img: 'assets/img/ranking.jpg',
+    stats: ['Steig im Ranking auf', 'Jeder Euro bringt dich höher'],
+    flavor: '„Platz 2 ist der erste Verlierer.“',
+  },
+  {
+    name: 'Echter Diamant Pin', level: 3, icon: 'pin', img: 'assets/img/pin.jpg',
+    stats: ['Verdiene dir deinen Diamant Pin', `Ab ${money(PIN_FROM)}`],
+    flavor: '„Zum Anstecken. Zum Angeben.“',
+  },
+  {
+    name: 'Herz für Menschen & Tiere', level: 4, icon: 'heart', img: 'assets/img/animals.jpg',
+    stats: ['Hilf damit Menschen und Tieren in Not', '100 % gutes Gewissen'],
+    flavor: '„Angeben und Gutes tun. Beides geht.“',
+  },
 ];
 
 function intro2() {
-  const bullets = [
-    `${hl('Ca$h')} ist für dich nichts? Beweise es und ${hl('zeig´s der Welt')}`,
-    `Steig im ${hl('Ranking')} auf`,
-    `Verdiene dir dein ${hl('Diamant Pin')} ab ${money(PIN_FROM)}`,
-    `${hl('Hilf')} damit auch Menschen und Tiere in Not`,
-  ];
   return {
-    html: `<section class="screen screen--intro2">
-      ${hero(`<div class="slides">${SLIDES.map((s, i) =>
-        `<img class="slide${i === 0 ? ' is-active' : ''}" src="${s.img}" alt="${s.alt}" draggable="false">`).join('')}</div>`,
-        { cls: 'hero--photo' })}
-      <ul class="bullets">
-        ${bullets.map((b, i) => `<li class="bullet${i === 0 ? ' is-active' : ''}" data-i="${i}">
-          <span class="bullet-ico">${diamondShadowed()}</span><span class="bullet-txt">${b}</span></li>`).join('')}
-      </ul>
+    html: `<section class="screen screen--dark screen--loot2" style="--rar:${RARITIES[0].color}">
+      <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
+      ${backButton('back--dark')}
+      <header class="loot-head">
+        <span class="loot-kicker">Deine Beute</span>
+        <h1 class="loot-title">Das holst du dir bei ${LOGO_TEXT}</h1>
+      </header>
+      <div class="tooltip-slot" data-tooltip aria-live="polite"></div>
+      <div class="inventory" role="tablist" aria-label="Belohnungen">
+        ${LOOT.map((it, i) => `<button class="slot" type="button" role="tab" data-i="${i}"
+          style="--rar:${RARITIES[it.level].color}; --d:${i * 0.18 + 0.2}s" aria-label="${it.name}">
+          ${icons[it.icon]}</button>`).join('')}
+      </div>
       <div class="screen-foot">
         ${dots(1)}
         ${button('Noch mehr!', 'data-go="intro/3"')}
       </div>
     </section>`,
     mount(el) {
-      const slides = [...el.querySelectorAll('.slide')];
-      const items = [...el.querySelectorAll('.bullet')];
-      let i = 0;
-      const show = (n) => {
-        i = (n + slides.length) % slides.length;
-        slides.forEach((s, k) => s.classList.toggle('is-active', k === i));
-        items.forEach((s, k) => s.classList.toggle('is-active', k === i));
+      const slotEls = [...el.querySelectorAll('.slot')];
+      const box = el.querySelector('[data-tooltip]');
+      const fx = particles(el.querySelector('[data-fx]'), { mode: 'dust', color: RARITIES[0].color });
+      let i = -1;
+      const show = (n, { sound = false } = {}) => {
+        i = (n + LOOT.length) % LOOT.length;
+        const it = LOOT[i];
+        const rarity = RARITIES[it.level];
+        slotEls.forEach((s, k) => s.setAttribute('aria-selected', k === i));
+        box.innerHTML = itemTooltip({
+          name: it.name, rarity, img: it.img,
+          stats: it.stats.map((text) => ({ text })), flavor: it.flavor, cls: 'is-in',
+        });
+        el.style.setProperty('--rar', rarity.color);
+        fx.setColor(rarity.color);
+        fx.setDensity(0.6 + it.level * 0.5);
+        if (sound) rarityDrop(it.level);
       };
-      let timer = setInterval(() => show(i + 1), 3200);
-      const restart = () => { clearInterval(timer); timer = setInterval(() => show(i + 1), 3200); };
-
-      items.forEach((it, k) => it.addEventListener('click', () => { show(k); restart(); }));
-
-      // Wischen im Bildbereich
-      const shape = el.querySelector('.hero-shape');
-      let x0 = null;
-      shape.addEventListener('pointerdown', (e) => { x0 = e.clientX; });
-      shape.addEventListener('pointerup', (e) => {
-        if (x0 == null) return;
-        const dx = e.clientX - x0;
-        x0 = null;
-        if (Math.abs(dx) > 40) { show(i + (dx < 0 ? 1 : -1)); restart(); }
-      });
-      return () => clearInterval(timer);
+      // Gegenstände fallen nacheinander ins Inventar
+      const drops = slotEls.map((_, k) => setTimeout(() => plink(k), 200 + k * 180));
+      show(0);
+      let timer = setInterval(() => show(i + 1), 3600);
+      slotEls.forEach((s, k) => s.addEventListener('click', () => {
+        clearInterval(timer);
+        show(k, { sound: true });
+        timer = setInterval(() => show(i + 1), 3600);
+      }));
+      return () => { clearInterval(timer); drops.forEach(clearTimeout); fx.dispose(); };
     },
   };
 }
 
+// 3. Gegenstandsvergleich: Belvedere-Flasche gegen den Fame-Diamanten.
 function intro3() {
+  const bottle = itemTooltip({
+    name: 'Belvedere Flasche', rarity: RARITIES[0], type: 'Normaler Gegenstand · nur im Club',
+    stats: [
+      { text: 'Preis: 300 € – 3.000 €' },
+      { text: 'Fame hält: einen Abend', cls: 'neg' },
+      { text: 'Reichweite: nur der Club', cls: 'neg' },
+    ],
+    cls: 'tooltip--compact',
+  });
+  const gem = itemTooltip({
+    name: `${LOGO_TEXT} Diamant`, rarity: RARITIES[4],
+    stats: [
+      { text: 'Preis: bestimmst du', cls: 'pos' },
+      { text: 'Fame hält: dein Leben lang', cls: 'pos' },
+      { text: 'Reichweite: grenzenlos', cls: 'pos' },
+      { text: 'Bonus: hilft Menschen & Tieren in Not', cls: 'pos' },
+    ],
+    flavor: '„Bei Fame bestimmst du deine Kosten. Der Fame hält dein Leben lang.“<br>– Fame Gründer',
+    cls: 'tooltip--new',
+  });
   return {
-    html: `<section class="screen screen--intro3">
-      ${hero(`<h1 class="story-title">#Real_story, BRO</h1>`)}
-      <blockquote class="quote">
-        <p>Eine Belvedere Flasche kostet im Club 300€ – 3.000€ der ${hl('Fame')} hält maximal einen Abend,
-        die Reichweite begrenzt sich auf den Club.<br>
-        Bei ${logoInline()} bestimmst du deine Kosten, der ${hl('Fame')} hält dein ${hl('Leben lang')}
-        und die Reichweite ist grenzenlos.</p>
-        <footer>${APP_NAME} Gründer</footer>
-      </blockquote>
+    html: `<section class="screen screen--dark screen--loot3" style="--rar:${RARITIES[4].color}">
+      <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
+      ${backButton('back--dark')}
+      <header class="loot-head">
+        <span class="loot-kicker">Gegenstandsvergleich</span>
+        <h1 class="story-title">#Real_story, BRO</h1>
+      </header>
+      <div class="compare">
+        <div class="compare-label">Ausgerüstet</div>
+        ${bottle}
+        <div class="compare-vs" aria-hidden="true">VS</div>
+        <div class="compare-label compare-label--new">Neu gefunden</div>
+        <div class="compare-new" data-new>${gem}</div>
+      </div>
       <div class="screen-foot">
         ${dots(2)}
-        ${button('Fang an – JETZT', 'data-go="donate"')}
+        ${button('Fang an – JETZT', 'data-go="login"')}
       </div>
     </section>`,
+    mount(el) {
+      const canvas = el.querySelector('[data-fx]');
+      const fx = particles(canvas, { color: '#ff9a3c', mode: 'embers', density: 0.5 });
+      const timer = setTimeout(() => {
+        el.classList.add('is-revealed');
+        rarityDrop(4);
+        const [x, y] = centerIn(canvas, el.querySelector('[data-new]'));
+        fx.burst(x, y, 50, '#ffb35c');
+      }, 650);
+      return () => { clearTimeout(timer); fx.dispose(); };
+    },
   };
 }
 
@@ -209,9 +305,9 @@ function login() {
         <h1 class="headline">Werde Fame</h1>
         <p class="sub">Leg dein Profil an und sichere dir deinen Platz im Ranking.</p>
         <label class="field"><span>Name</span>
-          <input name="name" autocomplete="given-name" required value="${esc(u.name)}" placeholder="Max"></label>
+          <input id="login-name" name="name" autocomplete="given-name" required value="${esc(u.name)}" placeholder="Max"></label>
         <label class="field"><span>Instagram</span>
-          <input name="insta" autocomplete="off" autocapitalize="off" value="${esc(u.insta ? '@' + u.insta : '')}" placeholder="@deinname"></label>
+          <input id="login-insta" name="insta" autocomplete="off" autocapitalize="off" value="${esc(u.insta ? '@' + u.insta : '')}" placeholder="@deinname"></label>
         <div class="screen-foot">
           <button class="btn" type="submit"><span>Login</span></button>
           ${state.user ? '<button class="link" type="button" data-logout>Abmelden</button>' : ''}
@@ -219,7 +315,7 @@ function login() {
       </form>
     </section>`,
     mount(el) {
-      const dia = createDiamond(el.querySelector('[data-diamond]'), { color: 0xeaf6ff, glow: 0.5 });
+      const dia = createDiamond(el.querySelector('[data-diamond]'), { level: 4, glow: 0.6, rim: '#3dfa74' });
       const form = el.querySelector('form');
       form.addEventListener('submit', (e) => {
         e.preventDefault();
@@ -246,22 +342,30 @@ function login() {
 
 function donate() {
   const registered = !!state.user;
+  const start = tierFor(state.amount);
   return {
-    html: `<section class="screen screen--donate">
+    html: `<section class="screen screen--donate" style="--rar:${start.css}">
       ${hero(`<div class="glow" data-glow></div>
+        <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
         <div class="rays" aria-hidden="true">${'<i></i>'.repeat(10)}</div>
         <div class="stage3d" data-diamond></div>
-        <div class="tier-name" data-tier></div>
+        <div class="rarity-flash" data-flash aria-hidden="true"></div>
+        <div class="tier-info">
+          <div class="tier-name" data-tier></div>
+          <div class="tier-rarity" data-rarity></div>
+        </div>
+        <div class="rarity-banner" data-banner aria-live="polite"></div>
         <div class="spin-hint">${icons.rotate} 360°</div>`, { cls: 'hero--tall hero--gem' })}
       <div class="donate-body">
         <label class="amount">
           <span class="sr-only">Betrag</span>
-          <input data-amount inputmode="numeric" autocomplete="off" aria-label="Betrag in Euro">
+          <input id="donate-amount" data-amount inputmode="numeric" autocomplete="off" aria-label="Betrag in Euro">
         </label>
-        ${registered ? `<div class="tierbar">
+        <div class="tierbar">
           <div class="tierbar-head"><span data-cur></span><span data-next></span></div>
-          <div class="tierbar-track"><div class="tierbar-fill" data-fill></div></div>
-        </div>` : ''}
+          <div class="tierbar-track">${TIERS.map((t) => `<i style="--c:${t.css}"></i>`).join('')}
+            <div class="tierbar-fill" data-fill></div></div>
+        </div>
         <div class="arc" data-arc role="slider" tabindex="0" aria-label="Betrag einstellen"
           aria-valuemin="${MIN_AMOUNT}" aria-valuemax="${MAX_AMOUNT}">
           <svg viewBox="0 0 300 108" aria-hidden="true">
@@ -274,7 +378,7 @@ function donate() {
           ? `<div class="rank">${icons.trophy}<span>RANK <b data-rank></b> / <span data-total></span></span></div>`
           : `<a class="rank rank--locked" href="#/login">${icons.trophy}<span>Log dich ein für dein Ranking</span></a>`}
         <label class="check">
-          <input type="checkbox" data-accept ${state.accepted ? 'checked' : ''}>
+          <input id="donate-accept" type="checkbox" data-accept ${state.accepted ? 'checked' : ''}>
           <span class="check-box" aria-hidden="true"></span>
           <span>Ich akzeptiere die <a href="#" data-terms>Bedingungen</a></span>
         </label>
@@ -284,16 +388,38 @@ function donate() {
       </div>
     </section>`,
     mount(el) {
-      const dia = createDiamond(el.querySelector('[data-diamond]'));
       const $ = (s) => el.querySelector(s);
+      const dia = createDiamond($('[data-diamond]'), { level: start.level, rim: start.css });
+      const canvas = $('[data-fx]');
+      const fx = particles(canvas, { color: start.css, mode: 'embers', density: 0.3 });
       const input = $('[data-amount]');
       const arc = $('[data-arc]');
       const fill = $('[data-arcfill]');
       const knob = $('[data-knob]');
       const btn = $('[data-awesome]');
       const accept = $('[data-accept]');
-      let tierId = null;
+      const flash = $('[data-flash]');
+      const banner = $('[data-banner]');
+      let level = start.level;
       let amount = state.amount;
+      let bannerTimer = 0;
+
+      // Neue Seltenheit gefunden: Blitz, Banner, Funken, Sound.
+      const lootFound = (tier) => {
+        rarityDrop(tier.level);
+        dia.pulse();
+        flash.classList.remove('is-on');
+        void flash.offsetWidth;
+        flash.classList.add('is-on');
+        banner.textContent = `${tier.rarity.label}!`;
+        banner.classList.remove('is-on');
+        void banner.offsetWidth;
+        banner.classList.add('is-on');
+        clearTimeout(bannerTimer);
+        bannerTimer = setTimeout(() => banner.classList.remove('is-on'), 1400);
+        const [x, y] = centerIn(canvas, $('[data-diamond]'));
+        fx.burst(x, y, 20 + tier.level * 20, tier.css);
+      };
 
       const update = (next, { sound = false } = {}) => {
         const prev = amount;
@@ -303,35 +429,39 @@ function donate() {
         const tier = tierFor(amount);
 
         // Bogen-Slider: x verläuft linear, y als Parabel (quadratische Bézierkurve).
-        const x = 20 + 260 * pos;
-        const y = 16 + 304 * pos * (1 - pos);
-        knob.setAttribute('transform', `translate(${x} ${y})`);
+        knob.setAttribute('transform', `translate(${20 + 260 * pos} ${16 + 304 * pos * (1 - pos)})`);
         fill.style.strokeDasharray = `${pos} 1`;
         arc.setAttribute('aria-valuenow', amount);
-        arc.setAttribute('aria-valuetext', money(amount));
+        arc.setAttribute('aria-valuetext', `${money(amount)}, ${tier.name}`);
 
         if (document.activeElement !== input) input.value = money(amount);
         $('[data-tier]').textContent = tier.name;
-        el.style.setProperty('--tier', tier.css);
+        $('[data-rarity]').textContent = tier.rarity.item;
+        el.style.setProperty('--rar', tier.css);
         el.style.setProperty('--glow', (0.25 + pos * 0.75).toFixed(3));
-        dia.setColor(tier.color);
         dia.setGlow(pos);
 
+        const nx = nextTier(amount);
+        $('[data-cur]').textContent = tier.name;
+        $('[data-next]').textContent = nx ? `${nx.name} ab ${money(nx.min)}` : 'Höchste Stufe';
+        $('[data-fill]').style.width = `${((tier.level + tierProgress(amount)) / TIERS.length) * 100}%`;
         if (state.user) {
-          const nx = nextTier(amount);
-          $('[data-cur]').textContent = tier.name;
-          $('[data-next]').textContent = nx ? nx.name : 'Top Stufe';
-          $('[data-fill]').style.width = `${Math.round(tierProgress(amount) * 100)}%`;
           const { rank, total } = rankFor(amount);
           $('[data-rank]').textContent = fmt(rank);
           $('[data-total]').textContent = fmt(total);
         }
 
-        if (sound && amount !== prev) {
-          if (tierId && tier.id !== tierId && amount > prev) { tierUp(); dia.pulse(); }
-          else tick(pos, amount > prev);
+        if (tier.level !== level) {
+          dia.setLevel(tier.level);
+          dia.setRim(tier.css);
+          fx.setColor(tier.css);
+          fx.setDensity(0.3 + tier.level * 0.45);
+          if (sound && tier.level > level) lootFound(tier);
+          else if (sound) tick(pos, false);
+          level = tier.level;
+        } else if (sound && amount !== prev) {
+          tick(pos, amount > prev);
         }
-        tierId = tier.id;
         store.set('amount', amount);
       };
 
@@ -386,17 +516,17 @@ function donate() {
           name: state.user?.name || '', insta: state.user?.insta || '', at: Date.now(),
         };
         store.set('donation', state.donation);
-        fanfare();
         go('card');
       });
 
       update(amount);
       syncBtn();
-      return () => dia.dispose();
+      return () => { clearTimeout(bannerTimer); fx.dispose(); dia.dispose(); };
     },
   };
 }
 
+// Fame-Card: sieht je nach Seltenheit aus wie ein Gegenstand bei Diablo/WoW.
 function card() {
   const d = state.donation;
   if (!d) {
@@ -404,32 +534,39 @@ function card() {
     return { html: '<section class="screen"></section>' };
   }
   const tier = TIERS.find((t) => t.id === d.tier) || tierFor(d.amount);
+  const rarity = tier.rarity;
   const name = firstName(d.name);
   return {
-    html: `<section class="screen screen--card" style="--tier:${tier.css}">
-      <button class="back back--light" type="button" data-back aria-label="Zurück">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 4 7 12l8 8"/></svg>
-      </button>
+    html: `<section class="screen screen--dark screen--card lvl-${tier.level}" style="--rar:${rarity.color}">
+      <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
+      ${backButton('back--dark')}
       <h1 class="omg">Omg… ${name ? esc(name) : 'du'}<br><em>Du bist so krass.</em></h1>
       <div class="card-wrap" data-tiltwrap>
-        <article class="famecard" data-card>
-          <div class="famecard-shine" data-shine></div>
-          <div class="famecard-top">
-            <span class="famecard-brand">${APP_NAME}${diamondSvg({ filled: true, cls: 'dia-inline' })}</span>
-            <span class="famecard-rank">${icons.trophy}${fmt(d.rank)} / ${fmt(d.total)}</span>
-          </div>
-          <div class="famecard-gem">
-            <div class="glow"></div>
-            <div class="stage3d" data-diamond></div>
-          </div>
-          <div class="famecard-amount">${money(d.amount)}</div>
-          <div class="famecard-tier">${tier.name}</div>
-          <div class="famecard-insta">${icons.insta}
-            ${d.insta
-              ? `<span>${esc(d.insta)}</span>`
-              : `<input data-insta placeholder="dein Instagram" autocomplete="off" autocapitalize="off" aria-label="Instagram-Name">`}
-          </div>
-        </article>
+        <div class="card-reveal" data-reveal>
+          <article class="famecard famecard--${rarity.id}" data-card>
+            <div class="famecard-ring" aria-hidden="true"></div>
+            <div class="famecard-inner">
+              <div class="famecard-shine" data-shine></div>
+              <div class="famecard-top">
+                <span class="famecard-brand">${LOGO_TEXT}${diamondSvg({ filled: true, cls: 'dia-inline' })}</span>
+                <span class="famecard-rank">${icons.trophy}${fmt(d.rank)} / ${fmt(d.total)}</span>
+              </div>
+              <div class="famecard-gem"><div class="glow"></div><div class="stage3d" data-diamond></div></div>
+              <h2 class="famecard-name">${tier.name}</h2>
+              <div class="famecard-type">${rarity.item}</div>
+              <ul class="famecard-stats">
+                <li>+${money(d.amount)} Fame</li>
+                <li>Rang ${fmt(d.rank)} von ${fmt(d.total)}</li>
+              </ul>
+              <p class="famecard-flavor">„${tier.flavor}“</p>
+              <div class="famecard-insta">${icons.insta}
+                ${d.insta
+                  ? `<span>${esc(d.insta)}</span>`
+                  : `<input id="card-insta" data-insta placeholder="dein Instagram" autocomplete="off" autocapitalize="off" aria-label="Instagram-Name">`}
+              </div>
+            </div>
+          </article>
+        </div>
       </div>
       <div class="screen-foot">
         ${button('Jetzt Posten', 'data-share')}
@@ -440,10 +577,22 @@ function card() {
       </div>
     </section>`,
     mount(el) {
-      const dia = createDiamond(el.querySelector('[data-diamond]'), { color: tier.color, glow: 0.8, interactive: false });
+      const dia = createDiamond(el.querySelector('[data-diamond]'), {
+        level: tier.level, rim: rarity.color, glow: 0.8, interactive: false,
+      });
+      const canvas = el.querySelector('[data-fx]');
+      const fx = particles(canvas, { color: rarity.color, mode: tier.level >= 3 ? 'embers' : 'dust', density: 0.4 + tier.level * 0.4 });
       const cardEl = el.querySelector('[data-card]');
       const shine = el.querySelector('[data-shine]');
       const instaInput = el.querySelector('[data-insta]');
+
+      // Aufdecken wie ein Loot-Fund
+      const revealTimer = setTimeout(() => {
+        el.classList.add('is-revealed');
+        rarityDrop(tier.level);
+        const [x, y] = centerIn(canvas, cardEl);
+        fx.burst(x, y, 20 + tier.level * 25, rarity.color);
+      }, 300);
 
       instaInput?.addEventListener('change', () => {
         d.insta = cleanHandle(instaInput.value);
@@ -484,7 +633,7 @@ function card() {
       el.querySelector('[data-share]').addEventListener('click', async () => {
         const blob = await makeImage();
         const file = new File([blob], 'fame-card.png', { type: 'image/png' });
-        const text = `Ich bin ${tier.name} auf ${APP_NAME} – Rang ${fmt(d.rank)} von ${fmt(d.total)} 💎 #fame #thentheothers`;
+        const text = `Ich habe einen ${tier.name} (${rarity.label}) auf ${APP_NAME} – Rang ${fmt(d.rank)} von ${fmt(d.total)} 💎 #fame #thentheothers`;
         try {
           if (navigator.canShare?.({ files: [file] })) {
             await navigator.share({ files: [file], text, title: APP_NAME });
@@ -502,8 +651,10 @@ function card() {
       });
 
       return () => {
+        clearTimeout(revealTimer);
         cancelAnimationFrame(raf);
         window.removeEventListener('deviceorientation', onOrient);
+        fx.dispose();
         dia.dispose();
       };
     },
@@ -521,61 +672,77 @@ function download(blob) {
   setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
-// Fame-Card als PNG (4:5, Instagram-Format) zeichnen.
+// Fame-Card als PNG (4:5, Instagram-Format) im Look der Seltenheit zeichnen.
 async function renderCardImage(d, tier, gemCanvas) {
   await document.fonts?.ready;
   const W = 1080, H = 1350;
+  const rar = tier.rarity.color;
   const c = document.createElement('canvas');
   c.width = W; c.height = H;
   const g = c.getContext('2d');
-  const font = (w, s) => `${w} ${s}px "Source Code Pro", ui-monospace, monospace`;
+  const font = (w, s, style = '') => `${style} ${w} ${s}px "Source Code Pro", ui-monospace, monospace`;
 
-  g.fillStyle = '#141414';
+  g.fillStyle = '#0e0e10';
   g.fillRect(0, 0, W, H);
-  const rg = g.createRadialGradient(W / 2, 560, 40, W / 2, 560, 520);
-  rg.addColorStop(0, tier.css + 'aa');
-  rg.addColorStop(1, '#14141400');
+  const rg = g.createRadialGradient(W / 2, 520, 40, W / 2, 520, 560);
+  rg.addColorStop(0, rar + '88');
+  rg.addColorStop(1, '#0e0e1000');
   g.fillStyle = rg;
   g.fillRect(0, 0, W, H);
 
-  g.strokeStyle = '#3dfa74';
-  g.lineWidth = 6;
-  g.strokeRect(48, 48, W - 96, H - 96);
+  // Rahmen: ab "Selten" doppelt, wie bei hochwertigen Gegenständen
+  g.strokeStyle = rar;
+  g.lineWidth = 8;
+  g.shadowColor = rar;
+  g.shadowBlur = tier.level * 14;
+  g.strokeRect(44, 44, W - 88, H - 88);
+  g.shadowBlur = 0;
+  if (tier.level >= 2) {
+    g.lineWidth = 3;
+    g.strokeRect(66, 66, W - 132, H - 132);
+  }
 
   g.textBaseline = 'alphabetic';
-  g.font = font(800, 84);
+  g.font = font(800, 80);
   g.fillStyle = '#3dfa74';
-  g.fillText(APP_NAME, 104, 186);
+  g.fillText(LOGO_TEXT, 106, 184);
   g.fillStyle = '#f8f8f6';
-  g.fillText(APP_NAME, 98, 178);
-  g.font = font(500, 30);
-  g.fillText('then the others', 100, 226);
+  g.fillText(LOGO_TEXT, 100, 176);
+  g.font = font(500, 28);
+  g.fillText('then the others', 102, 222);
 
   g.textAlign = 'right';
-  g.font = font(700, 40);
-  g.fillText(`🏆 ${fmt(d.rank)} / ${fmt(d.total)}`, W - 100, 178);
+  g.font = font(700, 38);
+  g.fillText(`🏆 ${fmt(d.rank)} / ${fmt(d.total)}`, W - 100, 176);
 
   if (gemCanvas) {
-    const s = 640;
+    const s = 560;
     const ratio = gemCanvas.width / gemCanvas.height;
     const w = ratio >= 1 ? s : s * ratio;
     const h = ratio >= 1 ? s / ratio : s;
-    g.drawImage(gemCanvas, (W - w) / 2, 560 - h / 2, w, h);
+    g.drawImage(gemCanvas, (W - w) / 2, 520 - h / 2, w, h);
   }
 
   g.textAlign = 'center';
-  g.font = font(800, 104);
-  g.fillStyle = '#3dfa74';
-  g.fillText(money(d.amount), W / 2 + 6, 1000 + 6);
-  g.fillStyle = '#f8f8f6';
-  g.fillText(money(d.amount), W / 2, 1000);
-  g.font = font(700, 56);
-  g.fillStyle = tier.css;
-  g.fillText(tier.name, W / 2, 1090);
+  g.font = font(800, 64);
+  g.fillStyle = rar;
+  g.shadowColor = rar;
+  g.shadowBlur = 24;
+  g.fillText(tier.name, W / 2, 880);
+  g.shadowBlur = 0;
+  g.font = font(500, 32);
+  g.fillStyle = '#c9c9c4';
+  g.fillText(tier.rarity.item, W / 2, 930);
+  g.font = font(700, 46);
+  g.fillStyle = '#7fb2ff';
+  g.fillText(`+${money(d.amount)} Fame`, W / 2, 1020);
+  g.font = font(500, 32, 'italic');
+  g.fillStyle = '#d9a35b';
+  g.fillText(`„${tier.flavor}“`, W / 2, 1100);
   if (d.insta) {
-    g.font = font(500, 40);
+    g.font = font(600, 38);
     g.fillStyle = '#f8f8f6';
-    g.fillText('@' + d.insta, W / 2, 1180);
+    g.fillText('@' + d.insta, W / 2, 1190);
   }
 
   return new Promise((res) => c.toBlob(res, 'image/png'));
@@ -589,12 +756,15 @@ function ranking() {
   if (me && me.rank <= 20) top.splice(me.rank - 1, 0, me);
   const rows = top.slice(0, 20).map((r, i) => ({ ...r, rank: i + 1 }));
   const podium = rows.slice(0, 3);
-  const row = (r) => `<li class="row${r.me ? ' row--me' : ''}">
-    <span class="row-rank">${fmt(r.rank)}</span>
-    <span class="row-gem" style="color:${tierFor(r.amount).css}">${diamondSvg({ filled: true })}</span>
-    <span class="row-name">@${esc(r.handle)}</span>
-    <span class="row-amount">${money(r.amount)}</span>
-  </li>`;
+  const row = (r) => {
+    const t = tierFor(r.amount);
+    return `<li class="row${r.me ? ' row--me' : ''}">
+      <span class="row-rank">${fmt(r.rank)}</span>
+      <span class="row-gem" style="color:${t.css}" title="${t.name}">${diamondSvg({ filled: true })}</span>
+      <span class="row-name">@${esc(r.handle)}</span>
+      <span class="row-amount">${money(r.amount)}</span>
+    </li>`;
+  };
   return {
     html: `<section class="screen screen--ranking">
       ${hero(`<div class="podium">

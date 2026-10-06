@@ -7,15 +7,23 @@ export const MAX_AMOUNT = 1_000_000;
 // Ab diesem Betrag gibt es den echten Diamant Pin.
 export const PIN_FROM = 1_000;
 
-// Rang-Stufen – benannt nach berühmten Diamanten. Die Farbe färbt den 3D-Diamanten.
-export const TIERS = [
-  { id: 'pink',   name: 'Pink Glow',     min: 1,       color: 0xff5fd2, css: '#ff5fd2' },
-  { id: 'blue',   name: 'Blue Spark',    min: 100,     color: 0x3fe0ff, css: '#3fe0ff' },
-  { id: 'shiny',  name: 'Shiny Diamond', min: 1_000,   color: 0xeaf6ff, css: '#cfe9ff' },
-  { id: 'hope',   name: 'Hope Diamond',  min: 10_000,  color: 0x5b84ff, css: '#5b84ff' },
-  { id: 'sancy',  name: 'Sancy Diamond', min: 100_000, color: 0xffe68a, css: '#ffd84a' },
-  { id: 'kohinoor', name: 'Koh-i-Noor',  min: 1_000_000, color: 0x3dfa74, css: '#3dfa74' },
+// Seltenheiten wie bei Diablo/WoW – sie färben Seite, Glow, Card und bestimmen den Sound.
+export const RARITIES = [
+  { id: 'normal',    label: 'Normal',   item: 'Normaler Gegenstand',    color: '#b4b4b4' },
+  { id: 'magic',     label: 'Magisch',  item: 'Magischer Gegenstand',   color: '#5b8cff' },
+  { id: 'rare',      label: 'Selten',   item: 'Seltener Gegenstand',    color: '#ffd43b' },
+  { id: 'mythic',    label: 'Mystisch', item: 'Mystischer Gegenstand',  color: '#b65cff' },
+  { id: 'legendary', label: 'Legendär', item: 'Legendärer Gegenstand',  color: '#ff8a1f' },
 ];
+
+// Diamant-Stufen nach Reinheit. `level` steuert Schliff, Klarheit und Funkeln des 3D-Diamanten.
+export const TIERS = [
+  { id: 'chipped',  name: 'Lädierter Diamant',    min: 1,       level: 0, flavor: 'Jeder fängt mal klein an.' },
+  { id: 'flawed',   name: 'Fehlerhafter Diamant', min: 100,     level: 1, flavor: 'Ein Kratzer hier, ein Funkeln da.' },
+  { id: 'diamond',  name: 'Diamant',              min: 1_000,   level: 2, flavor: 'Jetzt schauen die Leute hin.' },
+  { id: 'flawless', name: 'Makelloser Diamant',   min: 10_000,  level: 3, flavor: 'Kein Makel. Nur Fame.' },
+  { id: 'perfect',  name: 'Perfekter Diamant',    min: 100_000, level: 4, flavor: 'Erst Fame, dann die anderen.' },
+].map((t) => ({ ...t, rarity: RARITIES[t.level], css: RARITIES[t.level].color }));
 
 export function tierFor(amount) {
   let tier = TIERS[0];
