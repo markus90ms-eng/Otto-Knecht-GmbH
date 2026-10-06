@@ -18,14 +18,15 @@ python3 -m http.server 8080
 
 | Route | Inhalt |
 |---|---|
-| `#/` | Startseite: grünes Licht fährt von rechts nach links über den Screen, danach glänzt das Logo „Fam€“ mit gläsernem Diamanten. „Neu hier?“ steht groß über dem Login |
+| `#/` | Startseite: grünes Licht fährt von rechts nach links, danach glänzt das große Logo „Fam€“ mit gläsernem Diamanten. „Neu hier?“ steht oben, der Login unten |
 | `#/intro/1` | Loot-Drop: ein Perfekter Diamant fällt in einer Lichtsäule herunter, dazu der Claim |
-| `#/intro/2` | Inventar: vier Belohnungen (Normal, Selten, Mystisch, Legendär), dazu ein Tooltip wie bei Diablo |
-| `#/intro/3` | „#Real_story, BRO“ als Gegenstandsvergleich: Belvedere-Flasche gegen den Fam€ Diamanten. „Fang an – JETZT“ führt zum Login |
-| `#/login` | Registrieren mit Name und Instagram, dazu der drehende 3D-Diamant |
-| `#/donate` | 3D-Diamant (360° drehbar), Betrag, Bogen-Slider, Stufe und Rang, Bedingungen, „I´m awesome“ |
-| `#/card` | „Omg… Max, Du bist so krass.“: Fame-Card im Look der Seltenheit, kippt mit dem Gyrosensor, „Jetzt Posten“ / „Speichern“ |
-| `#/ranking` | Podest und Rangliste |
+| `#/intro/2` | Inventar: vier Belohnungen als drehende 3D-Gegenstände (Geldbündel, Krone, Diamant-Pin, Rubin-Herz) mit großem Tooltip wie bei Diablo |
+| `#/intro/3` | „#Real_story, BRO“: das Zitat des Gründers im legendären Rahmen. „Fang an – JETZT“ führt zum Login |
+| `#/login` | „Werde Fam€“: Name, Instagram, Land und Bundesland |
+| `#/donate` | Einzahlen: Kontostand, Betrag, Bogen-Slider, Stufe nach der Einzahlung, Rang, Bedingungen, „I´m awesome“ |
+| `#/card` | Fame-Card im Look der Stufe mit Seriennummer, kippt mit dem Gyrosensor, „Jetzt Posten“ / „Speichern“ |
+| `#/ranking/region` | Ranking im Bundesland: Podest, Rangliste, Bundesländer-Duell, eigene Platzierung unten fixiert |
+| `#/ranking/country` | Ranking im Land, dazu das Länder-Duell |
 
 Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:
 
@@ -37,17 +38,21 @@ Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:
 | Makelloser Diamant | 10.000 € | Mystisch | lila |
 | Perfekter Diamant | 100.000 € | Legendär | orange |
 
-- Je höher die Stufe, desto sauberer der Schliff und desto stärker das Funkeln. Der lädierte Diamant ist angeschlagen und trüb.
-- Bei einer neuen Stufe wechselt die ganze Seite in die Farbe der Seltenheit. Es blitzt, ein Banner („Selten!“) erscheint, Funken sprühen, und es gibt einen eigenen Fund-Sound mit Vibration.
-- Die Fame-Card bekommt den Rahmen der Seltenheit: Normal schlicht grau, Magisch blau, Selten mit goldenem Doppelrahmen. Ab Mystisch hat sie einen umlaufend leuchtenden Rand und eine Lichtsäule.
+- Der Diamant ist ein echter Brillantschliff mit 57 Facetten. Er spiegelt eine Studio-Lichtumgebung und hat Regenbogen-Feuer und Lichtblitze auf den Facetten. Je höher die Stufe, desto klarer der Stein und desto mehr Funkeln. Der lädierte Diamant ist angeschlagen und trüb.
+- Jede Stufe hat ihren eigenen Sound, nach oben wie nach unten. Beim Aufstieg wechselt die Seite in die Farbe der Seltenheit, ein Banner („Selten!“) erscheint und Funken sprühen.
+- Die Fame-Card bekommt den Rahmen der Seltenheit: Normal schlicht grau, Magisch blau, Selten mit goldenem Doppelrahmen. Ab Mystisch hat sie einen umlaufend leuchtenden Rand. Der Hintergrund wächst mit: Strahlen, ein Runenkreis, eine Lichtsäule.
+- Oben rechts steht eine Seriennummer (`FM-XXXX-XXXX-P` mit Prüfzeichen) als Nachweis, dass die Card aus der App stammt.
+
+## Konto und mehrfaches Einzahlen
+
+Jede Einzahlung wird dem Konto gutgeschrieben. Stufe und Rang hängen an der **Summe aller Einzahlungen**, wer nochmal einzahlt, steigt also weiter auf. Die Einzahl-Seite zeigt „Dein Konto → danach“, mit jeder Einzahlung gibt es eine neue Fame-Card mit neuer Seriennummer.
 - Auf der Card steht automatisch der Instagram-Name, wenn man registriert ist, sonst gibt es ein Eingabefeld.
 - „Jetzt Posten“ teilt die Card als Bild (4:5) über das Teilen-Menü des Handys, „Speichern“ lädt sie als PNG herunter.
 
 ## Noch Prototyp
 
 - **Es wird kein echtes Geld bewegt.** „I´m awesome“ simuliert die Zahlung. Zahlungsanbieter, Spendenabwicklung und Bedingungen fehlen noch.
-- Ranking und Mitspieler sind Beispieldaten (`js/data.js`), Profil und letzte Spende liegen nur im Browser (localStorage). Für echte Nutzer braucht es ein Backend.
-- Die Fotos im Inventar stammen aus den Design-Screens. Für den Livegang die Originale bzw. lizenzierten Bilder in `assets/img/` ablegen.
+- Ranking und Mitspieler sind Beispieldaten (`js/data.js`). Profil und Konto liegen nur im Browser (localStorage). Für echte Nutzer braucht es ein Backend mit Nutzerkonten, Zahlungsanbieter und serverseitig vergebenen, signierten Seriennummern.
 
 ## Struktur
 
@@ -57,8 +62,9 @@ fame/
   css/app.css        Design (Farben, Marker-Text, Buttons mit grünem Versatz, Kurven)
   js/app.js          Router und Screens
   js/ui.js           Logo, Diamant-Icons, Buttons, Hero mit Kurve
-  js/data.js         Stufen, Beträge, Ranking
-  js/diamond3d.js    3D-Diamant (three.js, liegt in vendor/)
+  js/data.js         Stufen, Länder/Bundesländer, Ranking, Seriennummern
+  js/diamond3d.js    Realistischer 3D-Diamant (three.js, liegt in vendor/)
+  js/items3d.js      3D-Gegenstände fürs Inventar
   js/fx.js           Loot-Sounds und Vibration
   js/particles.js    Funken und Staub
 ```

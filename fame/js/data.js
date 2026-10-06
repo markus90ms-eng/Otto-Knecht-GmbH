@@ -63,6 +63,24 @@ export function niceRound(v) {
   return Math.max(MIN_AMOUNT, Math.round(v / step) * step);
 }
 
+// ---- Länder und Regionen ------------------------------------------------------
+
+export const COUNTRIES = [
+  { id: 'DE', name: 'Deutschland', flag: '🇩🇪', weight: 52, regions: ['Baden-Württemberg', 'Bayern', 'Berlin', 'Brandenburg', 'Bremen', 'Hamburg', 'Hessen', 'Mecklenburg-Vorpommern', 'Niedersachsen', 'Nordrhein-Westfalen', 'Rheinland-Pfalz', 'Saarland', 'Sachsen', 'Sachsen-Anhalt', 'Schleswig-Holstein', 'Thüringen'] },
+  { id: 'AT', name: 'Österreich', flag: '🇦🇹', weight: 10, regions: ['Burgenland', 'Kärnten', 'Niederösterreich', 'Oberösterreich', 'Salzburg', 'Steiermark', 'Tirol', 'Vorarlberg', 'Wien'] },
+  { id: 'CH', name: 'Schweiz', flag: '🇨🇭', weight: 10, regions: ['Aargau', 'Basel', 'Bern', 'Genf', 'Graubünden', 'Luzern', 'St. Gallen', 'Tessin', 'Waadt', 'Wallis', 'Zug', 'Zürich'] },
+  { id: 'AE', name: 'VAE', flag: '🇦🇪', weight: 5, regions: ['Abu Dhabi', 'Dubai', 'Sharjah'] },
+  { id: 'US', name: 'USA', flag: '🇺🇸', weight: 5, regions: ['California', 'Florida', 'New York', 'Texas'] },
+  { id: 'GB', name: 'Großbritannien', flag: '🇬🇧', weight: 4, regions: ['England', 'Schottland', 'Wales'] },
+  { id: 'FR', name: 'Frankreich', flag: '🇫🇷', weight: 3, regions: ['Île-de-France', 'Provence', 'Rhône-Alpes'] },
+  { id: 'IT', name: 'Italien', flag: '🇮🇹', weight: 3, regions: ['Latium', 'Lombardei', 'Toskana'] },
+  { id: 'ES', name: 'Spanien', flag: '🇪🇸', weight: 3, regions: ['Balearen', 'Katalonien', 'Madrid'] },
+  { id: 'NL', name: 'Niederlande', flag: '🇳🇱', weight: 2, regions: ['Nordholland', 'Südholland', 'Utrecht'] },
+  { id: 'TR', name: 'Türkei', flag: '🇹🇷', weight: 2, regions: ['Ankara', 'Antalya', 'Istanbul'] },
+  { id: 'PL', name: 'Polen', flag: '🇵🇱', weight: 1, regions: ['Masowien', 'Kleinpolen', 'Schlesien'] },
+];
+export const countryById = (id) => COUNTRIES.find((c) => c.id === id) || COUNTRIES[0];
+
 // ---- Simuliertes Ranking (bis ein Backend existiert) -------------------------
 
 function mulberry32(seed) {
@@ -85,15 +103,47 @@ export function leaderboard() {
   if (board) return board;
   const rnd = mulberry32(20261003);
   const gauss = () => Math.sqrt(-2 * Math.log(rnd() || 1e-9)) * Math.cos(2 * Math.PI * rnd());
+  const totalWeight = COUNTRIES.reduce((s, c) => s + c.weight, 0);
+  const pickCountry = () => {
+    let r = rnd() * totalWeight;
+    for (const c of COUNTRIES) { if ((r -= c.weight) < 0) return c; }
+    return COUNTRIES[0];
+  };
   board = Array.from({ length: BOARD_SIZE }, () => {
     const amount = niceRound(Math.min(2_500_000, Math.exp(4.6 + 2.3 * gauss())));
     const handle = FIRST[Math.floor(rnd() * FIRST.length)] + SUFFIX[Math.floor(rnd() * SUFFIX.length)];
-    return { handle, amount };
+    const c = pickCountry();
+    return { handle, amount, country: c.id, region: c.regions[Math.floor(rnd() * c.regions.length)] };
   }).sort((a, b) => b.amount - a.amount);
   return board;
 }
 
-// Platz, den man mit diesem Betrag erreichen würde, und Gesamtzahl inkl. einem selbst.
+// Rangliste gefiltert (z. B. nur ein Bundesland), mit dem eigenen Konto einsortiert.
+export function standings({ country = null, region = null, me = null } = {}) {
+  let list = leaderboard().filter((r) => (!country || r.country === country) && (!region || r.region === region));
+  if (me && me.amount > 0 && (!country || me.country === country) && (!region || me.region === region)) {
+    list = [...list, { ...me, me: true }].sort((a, b) => b.amount - a.amount || (a.me ? -1 : 1));
+  }
+  return list.map((r, i) => ({ ...r, rank: i + 1 }));
+}
+
+// Summen je Land bzw. je Region eines Landes – für das Duell der Länder/Bundesländer.
+export function groupTotals(key, { country = null, me = null } = {}) {
+  const sums = new Map();
+  const add = (r) => {
+    if (country && r.country !== country) return;
+    const k = r[key];
+    const cur = sums.get(k) || { id: k, amount: 0, players: 0 };
+    cur.amount += r.amount;
+    cur.players += 1;
+    sums.set(k, cur);
+  };
+  leaderboard().forEach(add);
+  if (me && me.amount > 0) add(me);
+  return [...sums.values()].sort((a, b) => b.amount - a.amount).map((g, i) => ({ ...g, rank: i + 1 }));
+}
+
+// Platz, den man mit diesem Betrag weltweit erreichen würde, und Gesamtzahl inkl. einem selbst.
 export function rankFor(amount) {
   const list = leaderboard();
   let lo = 0, hi = list.length;
@@ -102,4 +152,29 @@ export function rankFor(amount) {
     if (list[mid].amount > amount) lo = mid + 1; else hi = mid;
   }
   return { rank: lo + 1, total: list.length + 1 };
+}
+
+// ---- Seriennummer der Fame-Card ------------------------------------------------
+// Format FM-XXXX-XXXX-P: 8 Zeichen aus Konto, Betrag und Zeitpunkt, dazu eine Prüfziffer.
+// Im Livebetrieb vergibt und signiert der Server die Nummer, damit sie nicht gefälscht werden kann.
+
+const B32 = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+
+export function makeSerial(seed) {
+  let h = 2166136261;
+  for (const ch of String(seed)) { h ^= ch.charCodeAt(0); h = Math.imul(h, 16777619); }
+  let body = '';
+  for (let i = 0; i < 8; i++) { h = Math.imul(h ^ (h >>> 13), 0x5bd1e995); body += B32[(h >>> 0) % 32]; }
+  return `FM-${body.slice(0, 4)}-${body.slice(4)}-${checkChar(body)}`;
+}
+
+function checkChar(body) {
+  let sum = 0;
+  [...body].forEach((ch, i) => { sum += B32.indexOf(ch) * (i % 2 ? 3 : 1); });
+  return B32[sum % 32];
+}
+
+export function isValidSerial(serial) {
+  const m = /^FM-([0-9A-Z]{4})-([0-9A-Z]{4})-([0-9A-Z])$/.exec(serial || '');
+  return !!m && checkChar(m[1] + m[2]) === m[3];
 }
