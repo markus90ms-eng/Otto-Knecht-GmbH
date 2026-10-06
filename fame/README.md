@@ -20,7 +20,7 @@ python3 -m http.server 8080
 |---|---|
 | `#/` | Startseite: grünes Licht fährt von rechts nach links, danach glänzt das große Logo „Fam€“ mit gläsernem Diamanten. „Neu hier?“ steht oben, der Login unten |
 | `#/intro/1` | Loot-Drop: ein Perfekter Diamant fällt in einer Lichtsäule herunter, dazu der Claim |
-| `#/intro/2` | Inventar: vier Belohnungen als drehende 3D-Gegenstände (Geldbündel, Krone, Diamant-Pin, Rubin-Herz) mit großem Tooltip wie bei Diablo |
+| `#/intro/2` | Übersicht: vier Belohnungen mit den Fotos aus dem Design (Cash, Podest, Neon-Diamant, Hund & Katze) in einer großen Box, darunter die Auswahl |
 | `#/intro/3` | „#Real_story, BRO“: das Zitat des Gründers im legendären Rahmen. „Fang an – JETZT“ führt zum Login |
 | `#/login` | „Werde Fam€“: Name, Instagram, Land und Bundesland |
 | `#/donate` | Einzahlen: Kontostand, Betrag, Bogen-Slider, Stufe nach der Einzahlung, Rang, Bedingungen, „I´m awesome“ |
@@ -39,7 +39,7 @@ Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:
 | Perfekter Diamant | 100.000 € | Legendär | orange |
 
 - Der Diamant ist ein echter Brillantschliff mit 57 Facetten. Er spiegelt eine Studio-Lichtumgebung und hat Regenbogen-Feuer und Lichtblitze auf den Facetten. Je höher die Stufe, desto klarer der Stein und desto mehr Funkeln. Der lädierte Diamant ist angeschlagen und trüb.
-- Jede Stufe hat ihren eigenen Sound, nach oben wie nach unten. Beim Aufstieg wechselt die Seite in die Farbe der Seltenheit, ein Banner („Selten!“) erscheint und Funken sprühen.
+- Jede Stufe hat ihren eigenen Sound, nach oben wie nach unten. Beim Aufstieg wechselt die Seite in die Farbe der Stufe und Funken sprühen.
 - Die Fame-Card bekommt den Rahmen der Seltenheit: Normal schlicht grau, Magisch blau, Selten mit goldenem Doppelrahmen. Ab Mystisch hat sie einen umlaufend leuchtenden Rand. Der Hintergrund wächst mit: Strahlen, ein Runenkreis, eine Lichtsäule.
 - Oben rechts steht eine Seriennummer (`FM-XXXX-XXXX-P` mit Prüfzeichen) als Nachweis, dass die Card aus der App stammt.
 
@@ -48,6 +48,10 @@ Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:
 Jede Einzahlung wird dem Konto gutgeschrieben. Stufe und Rang hängen an der **Summe aller Einzahlungen**, wer nochmal einzahlt, steigt also weiter auf. Die Einzahl-Seite zeigt „Dein Konto → danach“, mit jeder Einzahlung gibt es eine neue Fame-Card mit neuer Seriennummer.
 - Auf der Card steht automatisch der Instagram-Name, wenn man registriert ist, sonst gibt es ein Eingabefeld.
 - „Jetzt Posten“ teilt die Card als Bild (4:5) über das Teilen-Menü des Handys, „Speichern“ lädt sie als PNG herunter.
+
+## Ton
+
+Ton und Vibration starten nach dem ersten Antippen, so verlangen es die Handy-Browser. Auf dem iPhone spielt der Ton ab Safari 17 auch bei eingeschaltetem Lautlos-Schalter, bei älteren Versionen den Schalter ausschalten.
 
 ## Noch Prototyp
 
@@ -64,7 +68,6 @@ fame/
   js/ui.js           Logo, Diamant-Icons, Buttons, Hero mit Kurve
   js/data.js         Stufen, Länder/Bundesländer, Ranking, Seriennummern
   js/diamond3d.js    Realistischer 3D-Diamant (three.js, liegt in vendor/)
-  js/items3d.js      3D-Gegenstände fürs Inventar
   js/fx.js           Loot-Sounds und Vibration
   js/particles.js    Funken und Staub
 ```

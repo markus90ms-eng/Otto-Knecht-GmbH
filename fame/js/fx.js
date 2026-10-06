@@ -13,15 +13,27 @@ function audio() {
   }
 }
 
-// Browser spielen Ton erst nach einer Berührung – beim ersten Tippen freischalten.
+// Handys erlauben Ton erst nach einer echten Berührung. Als Erlaubnis zählt dort erst das
+// Loslassen des Fingers (touchend/pointerup/click), nicht das Aufsetzen. Wir versuchen es bei
+// jeder Berührung, bis der Ton wirklich läuft, und spielen dabei einen stillen Puffer ab (iOS).
 export function unlockAudio() {
-  const once = () => {
-    audio();
-    window.removeEventListener('pointerdown', once, true);
-    window.removeEventListener('keydown', once, true);
+  // iPhone: Web-Töne auch bei eingeschaltetem Lautlos-Schalter abspielen (Safari 17+)
+  try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch { /* nicht unterstützt */ }
+  const events = ['touchend', 'pointerup', 'click', 'keydown'];
+  const tryUnlock = () => {
+    const ac = audio();
+    if (!ac) return;
+    try {
+      const src = ac.createBufferSource();
+      src.buffer = ac.createBuffer(1, 1, 22050);
+      src.connect(ac.destination);
+      src.start(0);
+    } catch { /* ignorieren */ }
+    const done = () => events.forEach((ev) => window.removeEventListener(ev, tryUnlock, true));
+    if (ac.state === 'running') done();
+    else ac.resume().then(() => { if (ac.state === 'running') done(); }).catch(() => {});
   };
-  window.addEventListener('pointerdown', once, true);
-  window.addEventListener('keydown', once, true);
+  events.forEach((ev) => window.addEventListener(ev, tryUnlock, true));
 }
 
 function tone(freq, { at = 0, dur = 0.12, vol = 0.06, type = 'sine', slideTo = null, attack = 0.005 } = {}) {

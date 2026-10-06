@@ -11,7 +11,6 @@ import {
 } from './ui.js';
 import { tick, plink, rarityDrop, buzz, unlockAudio } from './fx.js';
 import { createDiamond } from './diamond3d.js';
-import { createItemShowcase } from './items3d.js';
 import { particles } from './particles.js';
 
 // ---- Zustand (lokal gespeichert, bis ein Backend existiert) -----------------
@@ -192,22 +191,22 @@ function intro1() {
 // 2. Inventar: vier Belohnungen mit steigender Seltenheit, jeweils als drehender 3D-Gegenstand.
 const LOOT = [
   {
-    name: 'Bündel Ca$h', level: 0, icon: 'cash', model: 'cash',
+    name: 'Bündel Ca$h', level: 0, icon: 'cash', img: 'assets/img/cash.jpg', alt: 'Ein Bündel Dollarscheine',
     stats: ['Ca$h ist für dich nichts?', 'Beweise es und zeig´s der Welt'],
     flavor: '„Geld hat jeder. Fame nicht.“',
   },
   {
-    name: 'Krone des Rankings', level: 2, icon: 'crown', model: 'crown',
+    name: 'Krone des Rankings', level: 2, icon: 'crown', img: 'assets/img/ranking.jpg', alt: 'Siegerpodest mit Strichmännchen auf Platz 1',
     stats: ['Steig im Ranking auf', 'Jeder Euro bringt dich höher'],
     flavor: '„Platz 2 ist der erste Verlierer.“',
   },
   {
-    name: 'Echter Diamant Pin', level: 3, icon: 'pin', model: 'pin',
+    name: 'Echter Diamant Pin', level: 3, icon: 'pin', img: 'assets/img/pin.jpg', alt: 'Neon-Hand mit Diamant',
     stats: ['Verdiene dir deinen Diamant Pin', `Ab ${money(PIN_FROM)}`],
     flavor: '„Zum Anstecken. Zum Angeben.“',
   },
   {
-    name: 'Herz für Menschen & Tiere', level: 4, icon: 'heart', model: 'heart',
+    name: 'Herz für Menschen & Tiere', level: 4, icon: 'heart', img: 'assets/img/animals.jpg', alt: 'Hund und Katze auf dem Sofa',
     stats: ['Hilf damit Menschen und Tieren in Not', '100 % gutes Gewissen'],
     flavor: '„Angeben und Gutes tun. Beides geht.“',
   },
@@ -220,7 +219,7 @@ function intro2() {
       ${backButton('back--dark')}
       <header class="loot-head"><h1 class="loot-title">Das holst du dir bei ${LOGO_TEXT}</h1></header>
       <article class="tooltip tooltip--big" data-tooltip>
-        <div class="tooltip-stage"><div class="tooltip-3d" data-item3d></div></div>
+        <div class="tooltip-stage">${LOOT.map((it, i) => `<img class="tooltip-photo${i === 0 ? ' is-active' : ''}" src="${it.img}" alt="${it.alt}" draggable="false">`).join('')}</div>
         <div class="tooltip-text" data-tiptext aria-live="polite"></div>
       </article>
       <div class="inventory" role="tablist" aria-label="Belohnungen">
@@ -237,7 +236,7 @@ function intro2() {
       const slotEls = [...el.querySelectorAll('.slot')];
       const tip = el.querySelector('[data-tooltip]');
       const text = el.querySelector('[data-tiptext]');
-      const showcase = createItemShowcase(el.querySelector('[data-item3d]'));
+      const photos = [...el.querySelectorAll('.tooltip-photo')];
       const fx = particles(el.querySelector('[data-fx]'), { mode: 'dust', color: RARITIES[0].color });
       let i = -1;
       const show = (n, { sound = false } = {}) => {
@@ -247,14 +246,13 @@ function intro2() {
         slotEls.forEach((s, k) => s.setAttribute('aria-selected', k === i));
         tip.className = `tooltip tooltip--big tooltip--${rarity.id}`;
         text.innerHTML = `<h3 class="tooltip-name">${it.name}</h3>
-          <div class="tooltip-type">${rarity.item}</div>
           <ul class="tooltip-stats">${it.stats.map((s) => `<li>${s}</li>`).join('')}</ul>
           <p class="tooltip-flavor">${it.flavor}</p>`;
         text.classList.remove('is-in');
         void text.offsetWidth;
         text.classList.add('is-in');
         el.style.setProperty('--rar', rarity.color);
-        showcase.show(it.model, rarity.color);
+        photos.forEach((ph, k) => ph.classList.toggle('is-active', k === i));
         fx.setColor(rarity.color);
         fx.setDensity(0.6 + it.level * 0.5);
         if (sound) rarityDrop(it.level);
@@ -268,7 +266,7 @@ function intro2() {
         show(k, { sound: true });
         timer = setInterval(() => show(i + 1), 4200);
       }));
-      return () => { clearInterval(timer); drops.forEach(clearTimeout); fx.dispose(); showcase.dispose(); };
+      return () => { clearInterval(timer); drops.forEach(clearTimeout); fx.dispose(); };
     },
   };
 }
@@ -383,7 +381,6 @@ function donate() {
         <div class="stage3d" data-diamond></div>
         <div class="rarity-flash" data-flash aria-hidden="true"></div>
         <div class="tier-info"><div class="tier-name" data-tier></div></div>
-        <div class="rarity-banner" data-banner aria-live="polite"></div>
         <div class="spin-hint">${icons.rotate} 360°</div>`, { cls: 'hero--tall hero--gem' })}
       <div class="donate-body">
         ${acc.total ? `<div class="account">
@@ -433,12 +430,10 @@ function donate() {
       const btn = $('[data-awesome]');
       const accept = $('[data-accept]');
       const flash = $('[data-flash]');
-      const banner = $('[data-banner]');
       let level = start.level;
       let amount = state.amount;
-      let bannerTimer = 0;
 
-      // Stufenwechsel: Blitz, Banner, Funken und der Sound der Stufe – nach oben wie nach unten.
+      // Stufenwechsel: Blitz, Funken und der Sound der Stufe – nach oben wie nach unten.
       const tierChanged = (tier, up) => {
         rarityDrop(tier.level);
         dia.pulse();
@@ -446,12 +441,6 @@ function donate() {
         void flash.offsetWidth;
         flash.classList.add('is-on');
         if (up) {
-          banner.textContent = `${tier.rarity.label}!`;
-          banner.classList.remove('is-on');
-          void banner.offsetWidth;
-          banner.classList.add('is-on');
-          clearTimeout(bannerTimer);
-          bannerTimer = setTimeout(() => banner.classList.remove('is-on'), 1400);
           const [x, y] = centerIn(canvas, $('[data-diamond]'));
           fx.burst(x, y, 20 + tier.level * 20, tier.css);
         }
@@ -567,7 +556,7 @@ function donate() {
 
       update(amount);
       syncBtn();
-      return () => { clearTimeout(bannerTimer); fx.dispose(); dia.dispose(); };
+      return () => { fx.dispose(); dia.dispose(); };
     },
   };
 }
@@ -685,7 +674,7 @@ function card() {
       el.querySelector('[data-share]').addEventListener('click', async () => {
         const blob = await makeImage();
         const file = new File([blob], 'fame-card.png', { type: 'image/png' });
-        const text = `Ich habe einen ${tier.name} (${rarity.label}) auf ${APP_NAME} 💎 Nr. ${c.serial} #fame #thentheothers`;
+        const text = `Ich habe einen ${tier.name} auf ${APP_NAME} 💎 Nr. ${c.serial} #fame #thentheothers`;
         try {
           if (navigator.canShare?.({ files: [file] })) {
             await navigator.share({ files: [file], text, title: APP_NAME });
