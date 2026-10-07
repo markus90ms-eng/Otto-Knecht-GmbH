@@ -130,3 +130,35 @@ export function fanfare() {
   [523, 659, 784, 1046, 1318].forEach((f, i) => tone(f, { at: i * 0.09, dur: 0.22, vol: 0.05, type: 'square' }));
   buzz([30, 50, 30, 50, 80]);
 }
+
+// Spannung vor dem Aufdecken: immer schnellere, steigende Ticks wie bei einem Spielautomaten.
+// Gibt die Dauer zurück; höhere Stufen bauen länger auf.
+export function buildup(level) {
+  const ac = audio();
+  const dur = 0.9 + level * 0.25;
+  if (!ac) return dur;
+  let t = 0, i = 0;
+  while (t < dur) {
+    const p = t / dur;
+    tone(330 * Math.pow(2, p * 1.6), { at: t, dur: 0.06, vol: 0.035 + p * 0.03, type: 'square' });
+    t += 0.16 - p * 0.12;
+    i++;
+  }
+  buzz(Array.from({ length: Math.min(12, i) }, (_, k) => (k % 2 ? 40 - k * 2 : 8)));
+  return dur;
+}
+
+// Gewinn beim Aufdecken: Fund-Sound der Stufe, ab "Diamant" ein Gewinn-Jingle, beim
+// perfekten Diamanten zusätzlich ein Münzregen.
+export function reveal(level) {
+  rarityDrop(level);
+  if (level >= 2) {
+    const scale = [523, 659, 784, 1046, 1318, 1568];
+    for (let r = 0; r < level - 1; r++) {
+      scale.forEach((f, i) => tone(f, { at: 0.25 + r * 0.36 + i * 0.05, dur: 0.12, vol: 0.035, type: 'square' }));
+    }
+  }
+  if (level >= 4) {
+    for (let i = 0; i < 26; i++) tone(2400 + Math.random() * 2400, { at: 0.5 + i * 0.045, dur: 0.05, vol: 0.02, type: 'triangle' });
+  }
+}

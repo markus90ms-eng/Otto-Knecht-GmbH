@@ -20,12 +20,12 @@ python3 -m http.server 8080
 |---|---|
 | `#/` | Startseite: grünes Licht fährt von rechts nach links, danach glänzt das große Logo „Fam€“ mit gläsernem Diamanten. „Neu hier?“ steht oben, der Login unten |
 | `#/intro/1` | Loot-Drop: ein Perfekter Diamant fällt in einer Lichtsäule herunter, dazu der Claim |
-| `#/intro/2` | Übersicht: vier Belohnungen mit den Fotos aus dem Design (Cash, Podest, Neon-Diamant, Hund & Katze) in einer großen Box, darunter die Auswahl |
-| `#/intro/3` | „#Real_story, BRO“: das Zitat des Gründers im legendären Rahmen. „Fang an – JETZT“ führt zum Login |
+| `#/intro/2` | Übersicht: vier Belohnungen, der Text steht groß im Fokus, darüber ein kleines Foto aus dem Design. Wechselt automatisch (Fortschrittsbalken) oder per Antippen |
+| `#/intro/3` | „#Real_story, BRO“: das Zitat des Gründers mittig im Spotlight, Zeile für Zeile. Beim Fame-Teil leuchtet es auf. „Fang an – JETZT“ führt zum Login |
 | `#/login` | „Werde Fam€“: Name, Instagram, Land und Bundesland |
-| `#/donate` | Einzahlen: Kontostand, Betrag, Bogen-Slider, Stufe nach der Einzahlung, Rang, Bedingungen, „I´m awesome“ |
-| `#/card` | Fame-Card im Look der Stufe mit Seriennummer, kippt mit dem Gyrosensor, „Jetzt Posten“ / „Speichern“ |
-| `#/ranking/region` | Ranking im Bundesland: Podest, Rangliste, Bundesländer-Duell, eigene Platzierung unten fixiert |
+| `#/donate` | Einzahlen: Diamanten, die man noch nicht besitzt, sind nur als leuchtende Silhouette mit „?“ zu sehen. Sammlung (x von 5 entdeckt), Betrag per Eintippen, +/− oder Regler, Hinweis „Nur noch X € bis …“ mit Freischalten-Knopf |
+| `#/card` | Fame-Card liegt verdeckt da. Antippen baut Spannung auf (Wackeln, Glühen, steigende Töne), dann dreht sie sich mit Lichtblitz, Funken und Gewinn-Sound um. Je höher die Stufe, desto größer der Moment |
+| `#/ranking/region` | Ranking im Bundesland: Kennzahlen, Podest mit Avataren, Rangliste, Deutschland-Kachelkarte (antippbar) und Bundesländer-Duell, eigene Platzierung unten fixiert |
 | `#/ranking/country` | Ranking im Land, dazu das Länder-Duell |
 
 Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:

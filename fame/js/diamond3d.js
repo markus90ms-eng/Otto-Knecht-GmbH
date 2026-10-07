@@ -178,6 +178,13 @@ export function diamondObject(level = 2) {
   innerMesh.scale.setScalar(0.985);
   group.add(innerMesh, outerMesh);
 
+  // Mystery-Modus: nur leuchtende Kanten auf schwarzem Stein – wie er aussieht, sieht nur, wer ihn hat.
+  const edgeMat = new THREE.LineBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const edges = new THREE.LineSegments(undefined, edgeMat);
+  edges.scale.setScalar(1.003);
+  group.add(edges);
+  let mystery = false;
+
   const sparkles = new THREE.Group();
   group.add(sparkles);
   const spriteMat = () => new THREE.SpriteMaterial({
@@ -185,17 +192,35 @@ export function diamondObject(level = 2) {
   });
 
   let q;
+  const applyLook = () => {
+    outer.color.setHex(mystery ? 0x050506 : q.color);
+    outer.metalness = mystery ? 0 : 0.9;
+    outer.clearcoat = mystery ? 0 : 1;
+    outer.opacity = mystery ? 1 : 0.9;
+    outer.roughness = mystery ? 0.8 : q.rough;
+    outer.iridescence = mystery ? 0 : q.iri;
+    outer.envMapIntensity = mystery ? 0.12 : q.env;
+    inner.color.setHex(mystery ? 0x000000 : q.inner);
+    inner.envMapIntensity = mystery ? 0 : 1.2;
+    edgeMat.opacity = mystery ? 1 : 0;
+    outer.emissive.copy(mystery ? edgeMat.color : new THREE.Color(0x000000));
+    outer.emissiveIntensity = mystery ? 0.14 : 0;
+    sparkles.visible = !mystery;
+  };
+  const setMystery = (on, color) => {
+    mystery = on;
+    if (color) edgeMat.color.set(color);
+    if (q) applyLook();
+  };
   const setLevel = (lv) => {
     q = QUALITY[Math.max(0, Math.min(QUALITY.length - 1, lv))];
     const geo = brilliantGeometry({ damage: q.damage });
     innerMesh.geometry?.dispose();
+    edges.geometry?.dispose();
     innerMesh.geometry = geo;
     outerMesh.geometry = geo;
-    outer.color.setHex(q.color);
-    outer.roughness = q.rough;
-    outer.iridescence = q.iri;
-    outer.envMapIntensity = q.env;
-    inner.color.setHex(q.inner);
+    edges.geometry = new THREE.EdgesGeometry(geo, 1);
+    applyLook();
 
     // Lichtblitze auf zufälligen Kronen-Ecken
     sparkles.children.forEach((s) => s.material.dispose());
@@ -219,6 +244,7 @@ export function diamondObject(level = 2) {
   return {
     group,
     setLevel,
+    setMystery,
     get quality() { return q; },
     update(t, boost = 0) {
       sparkles.children.forEach((sp) => {
@@ -230,6 +256,8 @@ export function diamondObject(level = 2) {
     },
     dispose() {
       innerMesh.geometry?.dispose();
+      edges.geometry?.dispose();
+      edgeMat.dispose();
       inner.dispose();
       outer.dispose();
       sparkles.children.forEach((s) => s.material.dispose());
@@ -240,11 +268,11 @@ export function diamondObject(level = 2) {
 // ---- Fertige Bühne mit Renderer, Drehung per Finger und Glow ------------------------------
 
 export function createDiamond(container, opts = {}) {
-  const { level = 2, glow = 0.4, autoRotate = true, interactive = true, tilt = 0.38, rim = '#ffffff' } = opts;
+  const { level = 2, glow = 0.4, autoRotate = true, interactive = true, tilt = 0.38, rim = '#ffffff', mystery = false } = opts;
 
   if (!webglAvailable()) {
     container.innerHTML = `<div class="diamond-fallback">${glassDiamond()}</div>`;
-    return { setLevel() {}, setRim() {}, setGlow() {}, pulse() {}, canvas: null, dispose() { container.innerHTML = ''; } };
+    return { setLevel() {}, setMystery() {}, setRim() {}, setGlow() {}, pulse() {}, canvas: null, dispose() { container.innerHTML = ''; } };
   }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -263,6 +291,7 @@ export function createDiamond(container, opts = {}) {
   camera.lookAt(0, -0.14, 0);
 
   const gem = diamondObject(level);
+  if (mystery) gem.setMystery(true, rim);
   gem.group.rotation.x = tilt;
   scene.add(gem.group);
 
@@ -327,6 +356,7 @@ export function createDiamond(container, opts = {}) {
   return {
     canvas: renderer.domElement,
     setLevel: gem.setLevel,
+    setMystery: gem.setMystery,
     setRim(color) { rimLight.color.set(color); },
     setGlow(v) { glowLevel = Math.max(0, Math.min(1, v)); },
     pulse() { pulseT = 1; },

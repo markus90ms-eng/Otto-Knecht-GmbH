@@ -1,15 +1,15 @@
 // Fame – App-Shell, Router und Screens.
 
 import {
-  TIERS, RARITIES, PIN_FROM, COUNTRIES, countryById, tierFor, nextTier, tierProgress, fmt, money,
-  amountFromPos, posFromAmount, niceRound, rankFor, standings, groupTotals, makeSerial,
+  TIERS, RARITIES, PIN_FROM, COUNTRIES, countryById, tierFor, nextTier, fmt, money,
+  amountFromPos, posFromAmount, rankFor, standings, groupTotals, makeSerial,
   MAX_AMOUNT, MIN_AMOUNT,
 } from './data.js';
 import {
   APP_NAME, LOGO_TEXT, esc, logo, logoInline, hl, dots, hero, button, backButton, diamondSvg,
   diamondShadowed, icons,
 } from './ui.js';
-import { tick, plink, rarityDrop, buzz, unlockAudio } from './fx.js';
+import { tick, plink, rarityDrop, buzz, unlockAudio, buildup, reveal } from './fx.js';
 import { createDiamond } from './diamond3d.js';
 import { particles } from './particles.js';
 
@@ -114,7 +114,8 @@ function toast(msg) {
 
 const firstName = (name) => (name || '').trim().split(/\s+/)[0];
 const cleanHandle = (h) => (h || '').trim().replace(/^@+/, '').replace(/\s+/g, '');
-const shortMoney = (n) => (n >= 1_000_000 ? `${(n / 1_000_000).toLocaleString('de-DE', { maximumFractionDigits: 1 })} Mio. €` : money(n));
+const shortMoney = (n) => (n >= 1_000_000 ? `${(n / 1_000_000).toLocaleString('de-DE', { maximumFractionDigits: 1 })} Mio. €`
+  : n >= 10_000 ? `${fmt(Math.round(n / 1000))} Tsd. €` : money(n));
 
 // Mittelpunkt eines Elements relativ zu einem Canvas (für Funken-Explosionen).
 function centerIn(canvas, el) {
@@ -188,29 +189,30 @@ function intro1() {
   };
 }
 
-// 2. Inventar: vier Belohnungen mit steigender Seltenheit, jeweils als drehender 3D-Gegenstand.
+// 2. Übersicht: vier Belohnungen. Der Text steht im Fokus, das Foto ist nur ein Begleiter.
 const LOOT = [
   {
-    name: 'Bündel Ca$h', level: 0, icon: 'cash', img: 'assets/img/cash.jpg', alt: 'Ein Bündel Dollarscheine',
-    stats: ['Ca$h ist für dich nichts?', 'Beweise es und zeig´s der Welt'],
-    flavor: '„Geld hat jeder. Fame nicht.“',
+    level: 0, icon: 'cash', img: 'assets/img/cash.jpg', alt: 'Ein Bündel Dollarscheine',
+    lead: `${hl('Ca$h')} ist für dich nichts?`,
+    sub: `Beweise es und ${hl('zeig´s der Welt')}.`,
   },
   {
-    name: 'Krone des Rankings', level: 2, icon: 'crown', img: 'assets/img/ranking.jpg', alt: 'Siegerpodest mit Strichmännchen auf Platz 1',
-    stats: ['Steig im Ranking auf', 'Jeder Euro bringt dich höher'],
-    flavor: '„Platz 2 ist der erste Verlierer.“',
+    level: 2, icon: 'crown', img: 'assets/img/ranking.jpg', alt: 'Siegerpodest mit Strichmännchen auf Platz 1',
+    lead: `Steig im ${hl('Ranking')} auf.`,
+    sub: 'Jeder Euro bringt dich höher – im Bundesland, im Land, weltweit.',
   },
   {
-    name: 'Echter Diamant Pin', level: 3, icon: 'pin', img: 'assets/img/pin.jpg', alt: 'Neon-Hand mit Diamant',
-    stats: ['Verdiene dir deinen Diamant Pin', `Ab ${money(PIN_FROM)}`],
-    flavor: '„Zum Anstecken. Zum Angeben.“',
+    level: 3, icon: 'pin', img: 'assets/img/pin.jpg', alt: 'Neon-Hand mit Diamant',
+    lead: `Verdiene dir deinen ${hl('Diamant Pin')}.`,
+    sub: `Echt, zum Anstecken. Ab ${money(PIN_FROM)}.`,
   },
   {
-    name: 'Herz für Menschen & Tiere', level: 4, icon: 'heart', img: 'assets/img/animals.jpg', alt: 'Hund und Katze auf dem Sofa',
-    stats: ['Hilf damit Menschen und Tieren in Not', '100 % gutes Gewissen'],
-    flavor: '„Angeben und Gutes tun. Beides geht.“',
+    level: 4, icon: 'heart', img: 'assets/img/animals.jpg', alt: 'Hund und Katze auf dem Sofa',
+    lead: `${hl('Hilf')} damit auch Menschen und Tieren in Not.`,
+    sub: 'Angeben und Gutes tun. Beides geht.',
   },
 ];
+const PERK_MS = 4800;
 
 function intro2() {
   return {
@@ -218,13 +220,15 @@ function intro2() {
       <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
       ${backButton('back--dark')}
       <header class="loot-head"><h1 class="loot-title">Das holst du dir bei ${LOGO_TEXT}</h1></header>
-      <article class="tooltip tooltip--big" data-tooltip>
-        <div class="tooltip-stage">${LOOT.map((it, i) => `<img class="tooltip-photo${i === 0 ? ' is-active' : ''}" src="${it.img}" alt="${it.alt}" draggable="false">`).join('')}</div>
-        <div class="tooltip-text" data-tiptext aria-live="polite"></div>
+      <article class="perk" data-perk>
+        <div class="perk-photo">${LOOT.map((it, i) => `<img class="perk-img${i === 0 ? ' is-active' : ''}" src="${it.img}" alt="${it.alt}" draggable="false">`).join('')}</div>
+        <div class="perk-count"><b data-idx>01</b> / ${String(LOOT.length).padStart(2, '0')}</div>
+        <div class="perk-text" data-perktext aria-live="polite"></div>
+        <div class="perk-progress" aria-hidden="true"><i data-progress></i></div>
       </article>
       <div class="inventory" role="tablist" aria-label="Belohnungen">
         ${LOOT.map((it, i) => `<button class="slot" type="button" role="tab" data-i="${i}"
-          style="--rar:${RARITIES[it.level].color}; --d:${i * 0.18 + 0.2}s" aria-label="${it.name}">
+          style="--rar:${RARITIES[it.level].color}; --d:${i * 0.18 + 0.2}s" aria-label="Belohnung ${i + 1}">
           ${icons[it.icon]}</button>`).join('')}
       </div>
       <div class="screen-foot">
@@ -234,9 +238,11 @@ function intro2() {
     </section>`,
     mount(el) {
       const slotEls = [...el.querySelectorAll('.slot')];
-      const tip = el.querySelector('[data-tooltip]');
-      const text = el.querySelector('[data-tiptext]');
-      const photos = [...el.querySelectorAll('.tooltip-photo')];
+      const perk = el.querySelector('[data-perk]');
+      const text = el.querySelector('[data-perktext]');
+      const imgs = [...el.querySelectorAll('.perk-img')];
+      const idx = el.querySelector('[data-idx]');
+      const progress = el.querySelector('[data-progress]');
       const fx = particles(el.querySelector('[data-fx]'), { mode: 'dust', color: RARITIES[0].color });
       let i = -1;
       const show = (n, { sound = false } = {}) => {
@@ -244,47 +250,59 @@ function intro2() {
         const it = LOOT[i];
         const rarity = RARITIES[it.level];
         slotEls.forEach((s, k) => s.setAttribute('aria-selected', k === i));
-        tip.className = `tooltip tooltip--big tooltip--${rarity.id}`;
-        text.innerHTML = `<h3 class="tooltip-name">${it.name}</h3>
-          <ul class="tooltip-stats">${it.stats.map((s) => `<li>${s}</li>`).join('')}</ul>
-          <p class="tooltip-flavor">${it.flavor}</p>`;
+        imgs.forEach((im, k) => im.classList.toggle('is-active', k === i));
+        perk.className = `perk perk--${rarity.id}`;
+        idx.textContent = String(i + 1).padStart(2, '0');
+        text.innerHTML = `<p class="perk-lead">${it.lead}</p><p class="perk-sub">${it.sub}</p>`;
         text.classList.remove('is-in');
         void text.offsetWidth;
         text.classList.add('is-in');
+        // Fortschrittsbalken bis zum nächsten automatischen Wechsel
+        progress.style.transition = 'none';
+        progress.style.width = '0%';
+        void progress.offsetWidth;
+        progress.style.transition = `width ${PERK_MS}ms linear`;
+        progress.style.width = '100%';
         el.style.setProperty('--rar', rarity.color);
-        photos.forEach((ph, k) => ph.classList.toggle('is-active', k === i));
         fx.setColor(rarity.color);
         fx.setDensity(0.6 + it.level * 0.5);
         if (sound) rarityDrop(it.level);
       };
-      // Gegenstände fallen nacheinander ins Inventar
       const drops = slotEls.map((_, k) => setTimeout(() => plink(k), 200 + k * 180));
       show(0);
-      let timer = setInterval(() => show(i + 1), 4200);
+      let timer = setInterval(() => show(i + 1), PERK_MS);
       slotEls.forEach((s, k) => s.addEventListener('click', () => {
         clearInterval(timer);
         show(k, { sound: true });
-        timer = setInterval(() => show(i + 1), 4200);
+        timer = setInterval(() => show(i + 1), PERK_MS);
       }));
       return () => { clearInterval(timer); drops.forEach(clearTimeout); fx.dispose(); };
     },
   };
 }
 
-// 3. Die Geschichte des Gründers.
+// 3. Die Geschichte des Gründers – mittig im Spotlight, Zeile für Zeile.
 function intro3() {
+  const lines = [
+    ['old', 'Eine Belvedere Flasche kostet im Club <b>300€ – 3.000€</b>,'],
+    ['old', `der ${hl('Fame')} hält maximal <b>einen Abend</b>,`],
+    ['old', 'die Reichweite begrenzt sich auf den Club.'],
+    ['new', `Bei ${logoInline()} bestimmst du deine Kosten,`],
+    ['new', `der ${hl('Fame')} hält dein ${hl('Leben lang')}`],
+    ['new', 'und die Reichweite ist <b>grenzenlos</b>.'],
+  ];
   return {
-    html: `<section class="screen screen--dark screen--loot3" style="--rar:${RARITIES[4].color}">
+    html: `<section class="screen screen--dark screen--story" style="--rar:${RARITIES[4].color}">
       <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
       ${backButton('back--dark')}
-      <header class="loot-head"><h1 class="story-title">#Real_story, BRO</h1></header>
-      <div class="story" data-story>
-        <blockquote class="tooltip tooltip--legendary story-quote">
-          <p>Eine Belvedere Flasche kostet im Club 300€ – 3.000€ der ${hl('Fame')} hält maximal einen Abend,
-          die Reichweite begrenzt sich auf den Club.</p>
-          <p>Bei ${logoInline()} bestimmst du deine Kosten, der ${hl('Fame')} hält dein ${hl('Leben lang')}
-          und die Reichweite ist grenzenlos.</p>
-          <footer>${APP_NAME} Gründer</footer>
+      <div class="story-stage">
+        <div class="spotlight" aria-hidden="true"></div>
+        <h1 class="story-title">#Real_story, BRO</h1>
+        <blockquote class="story-quote">
+          <span class="story-mark" aria-hidden="true">“</span>
+          ${lines.map(([kind, t], i) => `${i === 3 ? '<span class="story-divider" aria-hidden="true"></span>' : ''}
+            <p class="story-line story-line--${kind}" style="--i:${i + (i >= 3 ? 1 : 0)}">${t}</p>`).join('')}
+          <footer class="story-line" style="--i:8">${APP_NAME} Gründer</footer>
         </blockquote>
       </div>
       <div class="screen-foot">
@@ -294,13 +312,15 @@ function intro3() {
     </section>`,
     mount(el) {
       const canvas = el.querySelector('[data-fx]');
-      const fx = particles(canvas, { color: '#ff9a3c', mode: 'embers', density: 0.5 });
+      const fx = particles(canvas, { color: '#ff9a3c', mode: 'embers', density: 0.4 });
+      // Wenn der Fame-Teil erscheint: Licht, Funken, Sound
       const timer = setTimeout(() => {
-        el.classList.add('is-revealed');
+        el.classList.add('is-lit');
         rarityDrop(4);
-        const [x, y] = centerIn(canvas, el.querySelector('[data-story]'));
+        const [x, y] = centerIn(canvas, el.querySelector('.story-divider'));
         fx.burst(x, y, 50, '#ffb35c');
-      }, 450);
+        fx.setDensity(1);
+      }, 1700);
       return () => { clearTimeout(timer); fx.dispose(); };
     },
   };
@@ -369,34 +389,50 @@ function login() {
   };
 }
 
+// Schrittweite für +/- je nach Größenordnung (1, 5, 50, 500 …).
+function stepFor(amount, dir) {
+  const base = amount < 10 ? 1 : 5 * 10 ** (Math.floor(Math.log10(dir > 0 ? amount : amount - 1)) - 1);
+  return Math.max(1, base);
+}
+
+// Einzahlen: Wie ein Diamant aussieht, sieht nur, wer ihn besitzt. Alle anderen sehen nur
+// seine leuchtenden Umrisse – das macht neugierig.
 function donate() {
   const registered = !!state.user;
   const acc = state.account;
+  const owned = acc.total ? tierFor(acc.total).level : -1;
   const start = tierFor(acc.total + state.amount);
   return {
-    html: `<section class="screen screen--donate" style="--rar:${start.css}">
-      ${hero(`<div class="glow" data-glow></div>
-        <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
-        <div class="rays" aria-hidden="true">${'<i></i>'.repeat(10)}</div>
+    html: `<section class="screen screen--dark screen--donate" style="--rar:${start.css}">
+      <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
+      ${backButton('back--dark')}
+      <div class="vault">
+        <div class="vault-glow" aria-hidden="true"></div>
         <div class="stage3d" data-diamond></div>
+        <div class="vault-q" aria-hidden="true">?</div>
         <div class="rarity-flash" data-flash aria-hidden="true"></div>
-        <div class="tier-info"><div class="tier-name" data-tier></div></div>
-        <div class="spin-hint">${icons.rotate} 360°</div>`, { cls: 'hero--tall hero--gem' })}
+      </div>
+      <div class="vault-info">
+        <h1 class="vault-name" data-tier></h1>
+        <p class="vault-teaser" data-teaser></p>
+      </div>
+      <div class="collection" aria-label="Deine Diamanten">
+        ${TIERS.map((t) => `<span class="cslot" data-cslot="${t.level}" style="--c:${t.css}" title="${t.name}">
+          ${t.level <= owned ? diamondSvg({ filled: true }) : '<span class="cslot-q">?</span>'}</span>`).join('')}
+        <span class="collection-label">${owned + 1} von ${TIERS.length} entdeckt</span>
+      </div>
       <div class="donate-body">
-        ${acc.total ? `<div class="account">
-          <span>Dein Konto <b>${money(acc.total)}</b></span>
-          <span class="account-arrow" aria-hidden="true">→</span>
-          <span>danach <b data-after></b></span>
-        </div>` : '<div class="account account--new">Deine erste Einzahlung</div>'}
-        <label class="amount">
-          <span class="amount-label">Einzahlen</span>
-          <input id="donate-amount" data-amount inputmode="numeric" autocomplete="off" aria-label="Einzahlung in Euro">
-        </label>
-        <div class="tierbar">
-          <div class="tierbar-head"><span data-cur></span><span data-next></span></div>
-          <div class="tierbar-track">${TIERS.map((t) => `<i style="--c:${t.css}"></i>`).join('')}
-            <div class="tierbar-fill" data-fill></div></div>
+        ${acc.total ? `<div class="account">Dein Konto <b>${money(acc.total)}</b> → danach <b data-after></b></div>` : ''}
+        <div class="amount-box">
+          <button class="stepper" type="button" data-step="-1" aria-label="Weniger">−</button>
+          <label class="amount-field">
+            <span class="sr-only">Betrag in Euro</span>
+            <input id="donate-amount" data-amount inputmode="numeric" autocomplete="off" enterkeyhint="done">
+            <span class="amount-cur" aria-hidden="true">€</span>
+          </label>
+          <button class="stepper" type="button" data-step="1" aria-label="Mehr">+</button>
         </div>
+        <p class="amount-hint">Betrag antippen zum Eintippen – oder Regler ziehen</p>
         <div class="arc" data-arc role="slider" tabindex="0" aria-label="Betrag einstellen"
           aria-valuemin="${MIN_AMOUNT}" aria-valuemax="${MAX_AMOUNT}">
           <svg viewBox="0 0 300 108" aria-hidden="true">
@@ -405,9 +441,8 @@ function donate() {
             <g data-knob><circle class="knob-shadow" r="13" cx="3" cy="4"/><circle class="knob" r="13"/><circle class="knob-dot" r="4"/></g>
           </svg>
         </div>
-        ${registered
-          ? `<div class="rank">${icons.trophy}<span>RANK <b data-rank></b> / <span data-total></span></span></div>`
-          : `<a class="rank rank--locked" href="#/login">${icons.trophy}<span>Log dich ein für dein Konto und Ranking</span></a>`}
+        <button class="nudge" type="button" data-nudge></button>
+        ${registered ? '<p class="rank-preview" data-rankline></p>' : ''}
         <label class="check">
           <input id="donate-accept" type="checkbox" data-accept ${state.accepted ? 'checked' : ''}>
           <span class="check-box" aria-hidden="true"></span>
@@ -420,9 +455,11 @@ function donate() {
     </section>`,
     mount(el) {
       const $ = (s) => el.querySelector(s);
-      const dia = createDiamond($('[data-diamond]'), { level: start.level, rim: start.css });
+      const dia = createDiamond($('[data-diamond]'), {
+        level: start.level, rim: start.css, mystery: start.level > owned, glow: 0.6,
+      });
       const canvas = $('[data-fx]');
-      const fx = particles(canvas, { color: start.css, mode: 'embers', density: 0.3 + start.level * 0.45 });
+      const fx = particles(canvas, { color: start.css, mode: 'embers', density: 0.3 + start.level * 0.3 });
       const input = $('[data-amount]');
       const arc = $('[data-arc]');
       const fill = $('[data-arcfill]');
@@ -430,10 +467,11 @@ function donate() {
       const btn = $('[data-awesome]');
       const accept = $('[data-accept]');
       const flash = $('[data-flash]');
+      const nudge = $('[data-nudge]');
       let level = start.level;
       let amount = state.amount;
+      let nudgeTarget = 0;
 
-      // Stufenwechsel: Blitz, Funken und der Sound der Stufe – nach oben wie nach unten.
       const tierChanged = (tier, up) => {
         rarityDrop(tier.level);
         dia.pulse();
@@ -448,41 +486,53 @@ function donate() {
 
       const update = (next, { sound = false } = {}) => {
         const prev = amount;
-        amount = Math.min(MAX_AMOUNT, Math.max(MIN_AMOUNT, next));
+        amount = Math.min(MAX_AMOUNT, Math.max(MIN_AMOUNT, Math.round(next)));
         state.amount = amount;
         const after = acc.total + amount;
         const pos = posFromAmount(amount);
         const tier = tierFor(after);
+        const locked = tier.level > owned;
 
-        // Bogen-Slider: x verläuft linear, y als Parabel (quadratische Bézierkurve).
         knob.setAttribute('transform', `translate(${20 + 260 * pos} ${16 + 304 * pos * (1 - pos)})`);
         fill.style.strokeDasharray = `${pos} 1`;
         arc.setAttribute('aria-valuenow', amount);
         arc.setAttribute('aria-valuetext', `${money(amount)}, danach ${tier.name}`);
-
-        if (document.activeElement !== input) input.value = money(amount);
+        if (document.activeElement !== input) input.value = fmt(amount);
         const afterEl = $('[data-after]');
         if (afterEl) afterEl.textContent = money(after);
+
         $('[data-tier]').textContent = tier.name;
+        $('[data-teaser]').textContent = locked
+          ? 'Wie er aussieht, wissen nur die, die ihn haben.'
+          : 'Den kennst du schon. Willst du mehr sehen?';
+        el.classList.toggle('is-locked', locked);
+        el.querySelectorAll('[data-cslot]').forEach((s) => s.classList.toggle('is-target', +s.dataset.cslot === tier.level));
         el.style.setProperty('--rar', tier.css);
-        el.style.setProperty('--glow', (0.25 + posFromAmount(after) * 0.75).toFixed(3));
+        el.style.setProperty('--glow', (0.3 + posFromAmount(after) * 0.7).toFixed(3));
         dia.setGlow(posFromAmount(after));
 
+        // Anreiz: wie viel fehlt bis zum nächsten unbekannten Diamanten?
         const nx = nextTier(after);
-        $('[data-cur]').textContent = tier.name;
-        $('[data-next]').textContent = nx ? `${nx.name}: noch ${money(nx.min - after)}` : 'Höchste Stufe';
-        $('[data-fill]').style.width = `${((tier.level + tierProgress(after)) / TIERS.length) * 100}%`;
-        if (state.user) {
+        if (nx) {
+          nudgeTarget = nx.min - acc.total;
+          nudge.hidden = false;
+          nudge.style.setProperty('--c', nx.css);
+          nudge.innerHTML = `<span>Nur noch <b>${money(nx.min - after)}</b> bis zum <b>${nx.name}</b></span><span class="nudge-go">${nx.level > owned ? 'Freischalten' : 'Aufsteigen'} →</span>`;
+        } else {
+          nudge.hidden = true;
+        }
+        const rl = $('[data-rankline]');
+        if (rl) {
           const { rank, total } = rankFor(after);
-          $('[data-rank]').textContent = fmt(rank);
-          $('[data-total]').textContent = fmt(total);
+          rl.innerHTML = `${icons.trophy} Rang danach <b>${fmt(rank)}</b> von ${fmt(total)}`;
         }
 
         if (tier.level !== level) {
           dia.setLevel(tier.level);
           dia.setRim(tier.css);
+          dia.setMystery(locked, tier.css);
           fx.setColor(tier.css);
-          fx.setDensity(0.3 + tier.level * 0.45);
+          fx.setDensity(0.3 + tier.level * 0.3);
           if (sound) tierChanged(tier, tier.level > level);
           level = tier.level;
         } else if (sound && amount !== prev) {
@@ -491,7 +541,7 @@ function donate() {
         store.set('amount', amount);
       };
 
-      // Ziehen am Bogen
+      // Regler
       const svg = arc.querySelector('svg');
       const fromPointer = (e) => {
         const r = svg.getBoundingClientRect();
@@ -515,14 +565,23 @@ function donate() {
         update(amountFromPos(Math.min(1, Math.max(0, posFromAmount(amount) + d * 0.01))), { sound: true });
       });
 
-      // Direkte Eingabe des Betrags
-      input.addEventListener('focus', () => { input.value = String(amount); input.select(); });
+      // Betrag direkt eintippen: beim Antippen wird alles markiert, Eingabe wird live übernommen.
+      input.addEventListener('focus', () => { input.value = String(amount); requestAnimationFrame(() => input.select()); });
       input.addEventListener('input', () => {
         const n = parseInt(input.value.replace(/\D/g, ''), 10);
         if (n) update(n, { sound: true });
       });
-      input.addEventListener('blur', () => { update(niceRound(amount)); input.value = money(amount); });
+      input.addEventListener('blur', () => { input.value = fmt(amount); });
       input.addEventListener('keydown', (e) => { if (e.key === 'Enter') input.blur(); });
+
+      // Plus / Minus
+      el.querySelectorAll('[data-step]').forEach((b) => b.addEventListener('click', () => {
+        const d = +b.dataset.step;
+        const step = stepFor(amount, d);
+        update(d > 0 ? Math.floor(amount / step) * step + step : Math.ceil(amount / step) * step - step, { sound: true });
+      }));
+
+      nudge.addEventListener('click', () => { if (nudgeTarget > 0) update(nudgeTarget, { sound: true }); });
 
       const syncBtn = () => { btn.disabled = !accept.checked; };
       accept.addEventListener('change', () => { state.accepted = accept.checked; syncBtn(); buzz(8); });
@@ -539,7 +598,6 @@ function donate() {
           go('login');
           return;
         }
-        // iOS verlangt eine Freigabe für den Lagesensor – direkt beim Tippen anfragen.
         try { await window.DeviceOrientationEvent?.requestPermission?.(); } catch { /* abgelehnt */ }
         // Prototyp: die Zahlung wird simuliert und direkt dem Konto gutgeschrieben.
         const at = Date.now();
@@ -547,7 +605,7 @@ function donate() {
         acc.deposits.push({ amount, at });
         const tier = tierFor(acc.total);
         acc.cards.push({
-          tier: tier.id, total: acc.total, at,
+          tier: tier.id, total: acc.total, at, revealed: false,
           serial: makeSerial(`${state.user.name}|${state.user.insta}|${acc.total}|${at}`),
         });
         saveAccount();
@@ -561,7 +619,8 @@ function donate() {
   };
 }
 
-// Fame-Card: sieht je nach Stufe aus wie ein Gegenstand bei Diablo/WoW, mit Seriennummer.
+// Fame-Card: liegt verdeckt da. Antippen baut Spannung auf, dann dreht sie sich mit Licht und Sound.
+// Je höher die Stufe, desto länger die Spannung und desto größer der Gewinn-Moment.
 function card() {
   const acc = state.account;
   const c = acc.cards?.[acc.cards.length - 1];
@@ -572,21 +631,23 @@ function card() {
   const tier = TIERS.find((t) => t.id === c.tier) || tierFor(acc.total);
   const rarity = tier.rarity;
   const insta = state.user?.insta || '';
+  const hidden = c.revealed === false;
   return {
-    html: `<section class="screen screen--dark screen--card lvl-${tier.level}" style="--rar:${rarity.color}">
+    html: `<section class="screen screen--dark screen--card lvl-${tier.level}${hidden ? ' is-hidden' : ' is-open'}" style="--rar:${rarity.color}">
       <div class="loot-bg" aria-hidden="true">
         <div class="loot-rays"></div>
         <svg class="loot-runes" viewBox="0 0 200 200"><defs><path id="runepath" d="M100 100m-80 0a80 80 0 1 1 160 0a80 80 0 1 1-160 0"/></defs>
           <circle cx="100" cy="100" r="92"/><circle cx="100" cy="100" r="68"/>
-          <text><textPath href="#runepath">ᚠᚨᛗᛖ ✦ ᛏᚺᛖᚾ ᛏᚺᛖ ᛟᛏᚺᛖᚱᛊ ✦ ᚠᚨᛗᛖ ✦ ᛏᚺᛖᚾ ᛏᚺᛖ ᛟᛏᚺᛖᚱᛊ ✦</textPath></text></svg>
+          <text><textPath href="#runepath">FAM€ ✦ THEN THE OTHERS ✦ FAM€ ✦ THEN THE OTHERS ✦ FAM€ ✦</textPath></text></svg>
         <div class="loot-pillar"></div>
         <div class="loot-ground"></div>
       </div>
+      <div class="reveal-flash" data-flash aria-hidden="true"></div>
       <canvas class="fx-canvas" data-fx aria-hidden="true"></canvas>
       ${backButton('back--dark')}
       <div class="card-wrap" data-tiltwrap>
-        <div class="card-reveal" data-reveal>
-          <article class="famecard famecard--${rarity.id}" data-card>
+        <div class="flip" data-flip role="button" tabindex="0" aria-label="${hidden ? 'Karte aufdecken' : tier.name}">
+          <article class="famecard famecard--${rarity.id} flip-front" data-card>
             <div class="famecard-ring" aria-hidden="true"></div>
             <div class="famecard-inner">
               <div class="famecard-shine" data-shine></div>
@@ -604,9 +665,15 @@ function card() {
               </div>
             </div>
           </article>
+          <div class="cardback flip-back" aria-hidden="true">
+            <div class="cardback-pattern"></div>
+            <div class="cardback-logo">${logo('md')}</div>
+            <div class="cardback-q">?</div>
+            <div class="cardback-tap">Tippen zum Aufdecken</div>
+          </div>
         </div>
       </div>
-      <div class="screen-foot">
+      <div class="screen-foot card-actions">
         ${button('Jetzt Posten', 'data-share')}
         <div class="foot-links">
           <button class="link" type="button" data-save>Speichern</button>
@@ -620,18 +687,72 @@ function card() {
         level: tier.level, rim: rarity.color, glow: 0.8, interactive: false,
       });
       const canvas = el.querySelector('[data-fx]');
-      const fx = particles(canvas, { color: rarity.color, mode: tier.level >= 2 ? 'embers' : 'dust', density: 0.4 + tier.level * 0.45 });
-      const cardEl = el.querySelector('[data-card]');
+      const fx = particles(canvas, {
+        color: hidden ? '#3dfa74' : rarity.color,
+        mode: tier.level >= 2 && !hidden ? 'embers' : 'dust',
+        density: hidden ? 0.5 : 0.4 + tier.level * 0.45,
+      });
+      const flip = el.querySelector('[data-flip]');
       const shine = el.querySelector('[data-shine]');
+      const flash = el.querySelector('[data-flash]');
       const instaInput = el.querySelector('[data-insta]');
+      const timers = [];
 
-      // Aufdecken wie ein Loot-Fund
-      const revealTimer = setTimeout(() => {
-        el.classList.add('is-revealed');
-        rarityDrop(tier.level);
-        const [x, y] = centerIn(canvas, cardEl);
-        fx.burst(x, y, 20 + tier.level * 25, rarity.color);
-      }, 300);
+      // Drehwinkel der Karte: 180° = verdeckt, 0° = offen. Dazu Kippen und Wackeln.
+      let angle = hidden ? 180 : 0, target = angle, shake = 0, phase = hidden ? 'hidden' : 'open';
+      let tx = 0, ty = 0, cx = 0, cy = 0, raf = 0, idle = 0;
+      const setTarget = (x, y) => { tx = Math.max(-1, Math.min(1, x)); ty = Math.max(-1, Math.min(1, y)); idle = 0; };
+      const loop = (now) => {
+        idle += 1;
+        const ax = idle > 90 ? Math.sin(now / 1300) * 0.45 : tx;
+        const ay = idle > 90 ? Math.cos(now / 1700) * 0.3 : ty;
+        cx += (ax - cx) * 0.08;
+        cy += (ay - cy) * 0.08;
+        angle += (target - angle) * 0.14;
+        const jitter = shake ? (Math.random() - 0.5) * shake : 0;
+        flip.style.transform = `rotateY(${angle + cx * 12 + jitter * 3}deg) rotateX(${-cy * 12}deg) translateX(${jitter}px)`;
+        shine.style.setProperty('--sx', `${50 + cx * 40}%`);
+        shine.style.setProperty('--sy', `${50 + cy * 40}%`);
+        raf = requestAnimationFrame(loop);
+      };
+      raf = requestAnimationFrame(loop);
+
+      const open = () => {
+        if (phase !== 'hidden') return;
+        phase = 'charging';
+        el.classList.add('is-charging');
+        fx.setColor(rarity.color);
+        fx.setDensity(2 + tier.level);
+        const dur = buildup(tier.level);
+        // Wackeln wird immer stärker
+        const t0 = performance.now();
+        const grow = setInterval(() => {
+          const p = Math.min(1, (performance.now() - t0) / (dur * 1000));
+          shake = 1 + p * (4 + tier.level * 2);
+          el.style.setProperty('--charge', p.toFixed(2));
+        }, 30);
+        timers.push(grow);
+        timers.push(setTimeout(() => {
+          clearInterval(grow);
+          shake = 0;
+          phase = 'open';
+          target = 0;
+          el.classList.remove('is-charging', 'is-hidden');
+          el.classList.add('is-open', 'is-revealing');
+          flash.classList.add('is-on');
+          reveal(tier.level);
+          dia.pulse();
+          const [x, y] = centerIn(canvas, flip);
+          fx.burst(x, y, 40 + tier.level * 40, rarity.color);
+          if (tier.level >= 3) timers.push(setTimeout(() => fx.burst(x, y - 60, 60, '#ffffff'), 350));
+          fx.setDensity(0.4 + tier.level * 0.45);
+          c.revealed = true;
+          saveAccount();
+          flip.setAttribute('aria-label', tier.name);
+        }, dur * 1000));
+      };
+      flip.addEventListener('click', open);
+      flip.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); open(); } });
 
       instaInput?.addEventListener('change', () => {
         if (state.user) {
@@ -639,23 +760,6 @@ function card() {
           store.set('user', state.user);
         }
       });
-
-      // Karte kippt mit dem Gyrosensor – am Desktop folgt sie der Maus.
-      let tx = 0, ty = 0, cx = 0, cy = 0, raf = 0, idle = 0;
-      const setTarget = (x, y) => { tx = Math.max(-1, Math.min(1, x)); ty = Math.max(-1, Math.min(1, y)); idle = 0; };
-      const loop = (now) => {
-        idle += 1;
-        // ohne Eingabe sanft von selbst wippen
-        const ax = idle > 90 ? Math.sin(now / 1300) * 0.45 : tx;
-        const ay = idle > 90 ? Math.cos(now / 1700) * 0.3 : ty;
-        cx += (ax - cx) * 0.08;
-        cy += (ay - cy) * 0.08;
-        cardEl.style.transform = `rotateY(${cx * 14}deg) rotateX(${-cy * 14}deg)`;
-        shine.style.setProperty('--sx', `${50 + cx * 40}%`);
-        shine.style.setProperty('--sy', `${50 + cy * 40}%`);
-        raf = requestAnimationFrame(loop);
-      };
-      raf = requestAnimationFrame(loop);
 
       const onOrient = (e) => {
         if (e.gamma == null) return;
@@ -692,7 +796,7 @@ function card() {
       });
 
       return () => {
-        clearTimeout(revealTimer);
+        timers.forEach((t) => { clearTimeout(t); clearInterval(t); });
         cancelAnimationFrame(raf);
         window.removeEventListener('deviceorientation', onOrient);
         fx.dispose();
@@ -803,6 +907,18 @@ async function renderCardImage({ tier, serial, insta }, gemCanvas) {
 
 // ---- Ranking: zwei Seiten (Bundesland / Länder) --------------------------------
 
+// Deutschland als Kachelkarte: jede Kachel ein Bundesland, grob an seiner Lage.
+const DE_TILES = {
+  'Schleswig-Holstein': ['SH', 1, 0], 'Mecklenburg-Vorpommern': ['MV', 2, 0],
+  Bremen: ['HB', 0, 1], Hamburg: ['HH', 1, 1], Brandenburg: ['BB', 2, 1], Berlin: ['BE', 3, 1],
+  'Nordrhein-Westfalen': ['NW', 0, 2], Niedersachsen: ['NI', 1, 2], 'Sachsen-Anhalt': ['ST', 2, 2], Sachsen: ['SN', 3, 2],
+  'Rheinland-Pfalz': ['RP', 0, 3], Hessen: ['HE', 1, 3], 'Thüringen': ['TH', 2, 3],
+  Saarland: ['SL', 0, 4], 'Baden-Württemberg': ['BW', 1, 4], Bayern: ['BY', 2, 4],
+};
+
+const initials = (h) => (h.replace(/[^a-zA-Z]/g, '').slice(0, 2) || '?').toUpperCase();
+const avatar = (r, cls = '') => `<span class="avatar ${cls}" style="--c:${tierFor(r.amount).css}">${esc(initials(r.handle))}</span>`;
+
 function rankingPage(mode) {
   const me = meEntry();
   const userCountry = state.user?.country || 'DE';
@@ -822,19 +938,40 @@ function rankingPage(mode) {
   const maxGroup = groups[0]?.amount || 1;
   const sum = list.reduce((s, r) => s + r.amount, 0);
   const podium = [top[1], top[0], top[2]];
-  const PODIUM_RAR = [RARITIES[4], RARITIES[3], RARITIES[2]]; // Platz 1 legendär, 2 mystisch, 3 selten
+  const PODIUM_RAR = [RARITIES[4], RARITIES[3], RARITIES[2]]; // Platz 1, 2, 3
 
   const row = (r) => {
     const t = tierFor(r.amount);
     return `<li class="rrow${r.me ? ' rrow--me' : ''}" style="--rar:${t.css}">
       <span class="rrow-rank">${fmt(r.rank)}</span>
-      <span class="rrow-gem">${diamondSvg({ filled: true })}</span>
+      ${avatar(r)}
       <span class="rrow-name">@${esc(r.handle)}<small>${t.name}</small></span>
       <span class="rrow-amount">${money(r.amount)}</span>
     </li>`;
   };
+
+  // Duell: Kachelkarte für Deutschland, sonst Balken. Farbe: eine Farbe, je mehr Geld desto heller.
   const groupName = (g) => (mode === 'region' ? g.id : `${countryById(g.id).flag} ${countryById(g.id).name}`);
-  const isMyGroup = (g) => (mode === 'region' ? g.id === (me?.region) : g.id === (me?.country));
+  const isMyGroup = (g) => (mode === 'region' ? g.id === me?.region : g.id === me?.country);
+  const tileMap = mode === 'region' && country.id === 'DE'
+    ? `<div class="tilemap" role="list">
+        ${groups.map((g) => {
+          const [code, col, rowIdx] = DE_TILES[g.id] || ['?', 0, 0];
+          const t = g.amount / maxGroup;
+          return `<button class="tile${g.id === region ? ' is-active' : ''}${isMyGroup(g) ? ' is-mine' : ''}" type="button" role="listitem"
+            data-region="${esc(g.id)}" style="grid-column:${col + 1};grid-row:${rowIdx + 1};--t:${(0.12 + t * 0.88).toFixed(2)}"
+            title="${esc(g.id)}: ${money(g.amount)} · Platz ${g.rank}">
+            <b>${code}</b><small>${shortMoney(g.amount)}</small><i>${g.rank}.</i></button>`;
+        }).join('')}
+        <div class="tilemap-legend" aria-hidden="true"><span>weniger</span><i></i><span>mehr</span></div>
+      </div>`
+    : '';
+  const bars = `<ol class="duel-list">${groups.slice(0, tileMap ? 5 : 12).map((g) => `<li class="duel-row${isMyGroup(g) ? ' is-mine' : ''}">
+      <span class="duel-rank">${g.rank <= 3 ? `<span class="medal medal--${g.rank}">${g.rank}</span>` : g.rank}</span>
+      <span class="duel-name">${esc(groupName(g))}</span>
+      <span class="duel-bar"><i style="width:${Math.max(3, (g.amount / maxGroup) * 100)}%"></i></span>
+      <span class="duel-amount">${shortMoney(g.amount)}</span>
+    </li>`).join('')}</ol>`;
 
   return {
     html: `<section class="screen screen--dark screen--ranking" style="--rar:${RARITIES[4].color}">
@@ -846,24 +983,27 @@ function rankingPage(mode) {
       </nav>
       <header class="rank-head">
         <span class="rank-flag">${country.flag}</span>
-        <div>
-          <h1>${esc(region || country.name)}</h1>
-          <p>${fmt(list.length)} Spieler · ${shortMoney(sum)}</p>
-        </div>
+        <h1>${esc(region || country.name)}</h1>
       </header>
+      <div class="stat-tiles">
+        <div class="stat"><b>${fmt(list.length)}</b><span>Spieler</span></div>
+        <div class="stat"><b>${shortMoney(sum)}</b><span>Gesamt</span></div>
+        <div class="stat stat--me"><b>${mine ? `#${fmt(mine.rank)}` : '–'}</b><span>Dein Platz</span></div>
+      </div>
       <div class="chips" role="tablist">
         ${mode === 'region'
           ? country.regions.map((r) => `<button class="chip${r === region ? ' is-active' : ''}" type="button" data-region="${esc(r)}">${esc(r)}</button>`).join('')
           : COUNTRIES.map((c) => `<button class="chip${c.id === country.id ? ' is-active' : ''}" type="button" data-country="${c.id}">${c.flag} ${c.name}</button>`).join('')}
       </div>
       <div class="podium3">
+        <div class="podium-beams" aria-hidden="true"></div>
         ${podium.map((p, k) => {
           if (!p) return '<div class="pstep"></div>';
           const place = [2, 1, 3][k];
           const rar = PODIUM_RAR[place - 1];
           return `<div class="pstep pstep--${place}${p.me ? ' is-me' : ''}" style="--rar:${rar.color}">
             ${place === 1 ? `<span class="pcrown">${icons.crown}</span>` : ''}
-            <span class="pgem">${diamondSvg({ filled: true })}</span>
+            ${avatar(p, 'avatar--big')}
             <span class="pname">@${esc(p.handle)}</span>
             <span class="pamount">${shortMoney(p.amount)}</span>
             <div class="pblock"><span>${place}</span></div>
@@ -874,12 +1014,8 @@ function rankingPage(mode) {
       ${mine && mine.rank > 20 ? `<div class="rows-gap">…</div><ol class="rlist">${row(mine)}</ol>` : ''}
       <section class="duel">
         <h2>${mode === 'region' ? `${country.name}: Bundesländer-Duell` : 'Länder-Duell'}</h2>
-        <ol>${groups.slice(0, 16).map((g) => `<li class="duel-row${isMyGroup(g) ? ' is-mine' : ''}">
-          <span class="duel-rank">${g.rank}</span>
-          <span class="duel-name">${esc(groupName(g))}</span>
-          <span class="duel-bar"><i style="width:${Math.max(3, (g.amount / maxGroup) * 100)}%"></i></span>
-          <span class="duel-amount">${shortMoney(g.amount)}</span>
-        </li>`).join('')}</ol>
+        ${tileMap}
+        ${bars}
       </section>
       <div class="mebar">
         ${mine
@@ -898,7 +1034,9 @@ function rankingPage(mode) {
         state.rankView = { country: b.dataset.country };
         render();
       }));
-      el.querySelector('.chip.is-active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
+      const chips = el.querySelector('.chips');
+      const active = chips.querySelector('.chip.is-active');
+      if (active) chips.scrollLeft = active.offsetLeft - chips.clientWidth / 2 + active.clientWidth / 2;
       return () => fx.dispose();
     },
   };

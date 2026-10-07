@@ -1,5 +1,5 @@
 // Einfacher Offline-Cache: App-Dateien zuerst aus dem Netz, sonst aus dem Cache.
-const CACHE = 'fame-v4';
+const CACHE = 'fame-v5';
 const ASSETS = [
   './', 'index.html', 'css/app.css', 'manifest.webmanifest',
   'js/app.js', 'js/data.js', 'js/ui.js', 'js/fx.js', 'js/diamond3d.js', 'js/particles.js',
