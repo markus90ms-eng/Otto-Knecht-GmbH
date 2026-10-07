@@ -47,7 +47,19 @@ Diamant-Stufen (wie die Edelsteine bei Diablo) und ihre Seltenheit:
 
 Jede Einzahlung wird dem Konto gutgeschrieben. Stufe und Rang hängen an der **Summe aller Einzahlungen**, wer nochmal einzahlt, steigt also weiter auf. Die Einzahl-Seite zeigt „Dein Konto → danach“, mit jeder Einzahlung gibt es eine neue Fame-Card mit neuer Seriennummer.
 - Auf der Card steht automatisch der Instagram-Name, wenn man registriert ist, sonst gibt es ein Eingabefeld.
-- „Jetzt Posten“ teilt die Card als Bild (4:5) über das Teilen-Menü des Handys, „Speichern“ lädt sie als PNG herunter.
+
+## Card teilen: Instagram Story & TikTok
+
+Nach dem Aufdecken stehen unter der Card drei Knöpfe: **Story** (Instagram), **TikTok** und **Mehr**. „Mehr“ öffnet ein Fenster mit Vorschau der fertigen Story und den Zielen Instagram Story, TikTok, weitere Apps und Bild speichern.
+
+- **Story-Bild 1080×1920 (9:16):**
+  - Oben das Logo, in der Mitte die Card im Look der Stufe, darunter „Erst Fame, dann die anderen.“
+  - Hintergrund, Strahlen und Funken in der Stufenfarbe.
+  - Oben und unten bleibt Platz für die Bedienelemente von Instagram und TikTok.
+- **Card-Sticker** (transparenter Rand) für den nativen Instagram-Weg: Instagram legt ihn auf einen Verlauf in der Stufenfarbe, der Nutzer kann ihn frei platzieren.
+- **Im Browser:** Das Bild geht über das Teilen-Menü des Handys raus, dort Instagram (Story) bzw. TikTok wählen. Gibt es kein Teilen-Menü, wird das Bild gespeichert, mit Hinweis, wie es weitergeht.
+- **In der nativen App:** Das Plugin `FameShare` ruft die offiziellen Schnittstellen auf, Instagram „Sharing to Stories“ und TikTok Share Kit. Einrichtung siehe [`native/README.md`](native/README.md).
+- Der Link in der Story (`SHARE_BASE` in `js/share.js`) zeigt auf `https://fame.app/card/<Seriennummer>`. Die Domain ist ein Platzhalter.
 
 ## Ton
 
@@ -70,6 +82,8 @@ fame/
   js/diamond3d.js    Realistischer 3D-Diamant (three.js, liegt in vendor/)
   js/fx.js           Loot-Sounds und Vibration
   js/particles.js    Funken und Staub
+  js/share.js        Story-Bild, Card-Sticker, Teilen zu Instagram/TikTok
+  native/            Capacitor-Plugin für Instagram Stories und TikTok Share Kit (iOS/Android)
 ```
 
 Stufen, Pin-Schwelle (`PIN_FROM`) und Währung lassen sich zentral in `js/data.js` anpassen.

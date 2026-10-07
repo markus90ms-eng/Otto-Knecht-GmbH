@@ -120,5 +120,8 @@ export const icons = {
   cash: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="2.5" y="6" width="19" height="12" rx="1.5"/><circle cx="12" cy="12" r="3"/><path d="M5.5 9v6 M18.5 9v6"/></svg>`,
   pin: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10l4 5-9 11L3 9z M3 9h18 M10 4l-1.5 5L12 20l3.5-11L14 4"/></svg>`,
   heart: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 20s-8-4.6-8-10.2A4.3 4.3 0 0 1 12 7a4.3 4.3 0 0 1 8 2.8C20 15.4 12 20 12 20z"/></svg>`,
+  tiktok: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5 M14 3c.4 2.6 2.2 4.4 5 4.6"/></svg>`,
+  share: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3 M7.5 7.5 12 3l4.5 4.5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>`,
+  download: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12 M7.5 10.5 12 15l4.5-4.5 M5 19h14"/></svg>`,
   bottle: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2h4v4l1.5 3v12a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V9L10 6z M8.5 13h7"/></svg>`,
 };

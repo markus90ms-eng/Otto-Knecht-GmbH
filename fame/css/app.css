@@ -19,6 +19,7 @@
 }
 
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 
 html, body {
   margin: 0;
@@ -1469,3 +1470,83 @@ button, input { font: inherit; color: inherit; }
 .medal--1 { background: #ff8a1f; box-shadow: 0 0 10px #ff8a1f; }
 .medal--2 { background: #b65cff; box-shadow: 0 0 10px #b65cff; }
 .medal--3 { background: #ffd43b; box-shadow: 0 0 10px #ffd43b; }
+
+/* ---- Card teilen ---------------------------------------------------------------- */
+
+.quick-share { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; width: 100%; max-width: 340px; }
+.qs {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 6px 10px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--bg);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: transform 0.12s, background 0.2s;
+}
+.qs .ico { width: 24px; height: 24px; }
+.qs:active { transform: scale(0.96); }
+/* Instagram-Verlauf und TikTok-Farben als Erkennungszeichen */
+.qs--ig { border: 0; background: linear-gradient(135deg, #feda75, #fa7e1e 25%, #d62976 50%, #962fbf 75%, #4f5bd5); }
+.qs--tt { border: 0; background: #000; box-shadow: -2px -2px 0 #25f4ee, 2px 2px 0 #fe2c55; }
+.is-busy { opacity: 0.6; pointer-events: none; }
+
+.sheet { position: absolute; inset: 0; z-index: 20; }
+.sheet-backdrop { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.6); opacity: 0; transition: opacity 0.3s; }
+.sheet-panel {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  max-height: 92%;
+  overflow-y: auto;
+  padding: 10px var(--gutter) max(20px, env(safe-area-inset-bottom));
+  background: #121214;
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 22px 22px 0 0;
+  color: var(--bg);
+  transform: translateY(100%);
+  transition: transform 0.35s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+.sheet.is-open .sheet-backdrop { opacity: 1; }
+.sheet.is-open .sheet-panel { transform: none; }
+.sheet-grip { width: 40px; height: 4px; margin: 0 auto 12px; border-radius: 4px; background: rgba(255, 255, 255, 0.25); }
+.sheet-title { margin: 0 0 12px; text-align: center; font-size: 18px; font-weight: 800; }
+.sheet-preview {
+  position: relative;
+  width: 168px;
+  aspect-ratio: 9 / 16;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #0a0a0b;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.1), 0 0 30px color-mix(in srgb, var(--rar) 40%, transparent);
+}
+.sheet-preview img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.sheet-loading { position: absolute; inset: 0; display: grid; place-items: center; font-size: 11px; color: #8b8a85; }
+.sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 16px; }
+.share-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 50px;
+  padding: 0 10px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--bg);
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.share-btn .ico { width: 20px; height: 20px; }
+.share-btn--ig { border: 0; background: linear-gradient(135deg, #feda75, #fa7e1e 25%, #d62976 50%, #962fbf 75%, #4f5bd5); }
+.share-btn--tt { border: 0; background: #000; box-shadow: -2px -2px 0 #25f4ee, 2px 2px 0 #fe2c55; }
+.sheet-note { margin: 12px 0 0; text-align: center; font-size: 11px; color: #8b8a85; }

@@ -12,6 +12,9 @@ import {
 import { tick, plink, rarityDrop, buzz, unlockAudio, buildup, reveal } from './fx.js';
 import { createDiamond } from './diamond3d.js';
 import { particles } from './particles.js';
+import {
+  renderStory, renderSticker, shareToInstagramStory, shareToTikTok, shareElsewhere, saveImage,
+} from './share.js';
 
 // ---- Zustand (lokal gespeichert, bis ein Backend existiert) -----------------
 
@@ -674,11 +677,29 @@ function card() {
         </div>
       </div>
       <div class="screen-foot card-actions">
-        ${button('Jetzt Posten', 'data-share')}
+        <div class="quick-share">
+          <button class="qs qs--ig" type="button" data-share="ig">${icons.insta}<span>Story</span></button>
+          <button class="qs qs--tt" type="button" data-share="tt">${icons.tiktok}<span>TikTok</span></button>
+          <button class="qs" type="button" data-open-sheet>${icons.share}<span>Mehr</span></button>
+        </div>
         <div class="foot-links">
-          <button class="link" type="button" data-save>Speichern</button>
           <a class="link" href="#/donate">Nochmal einzahlen</a>
           <a class="link" href="#/ranking">Ranking</a>
+        </div>
+      </div>
+      <div class="sheet" data-sheet hidden>
+        <div class="sheet-backdrop" data-close-sheet></div>
+        <div class="sheet-panel" role="dialog" aria-modal="true" aria-label="Card teilen">
+          <div class="sheet-grip" aria-hidden="true"></div>
+          <h2 class="sheet-title">Zeig´s der Welt</h2>
+          <div class="sheet-preview"><img data-preview alt="Vorschau deiner Story"><span class="sheet-loading" data-loading>Story wird gebaut…</span></div>
+          <div class="sheet-actions">
+            <button class="share-btn share-btn--ig" type="button" data-share="ig">${icons.insta}<span>Instagram Story</span></button>
+            <button class="share-btn share-btn--tt" type="button" data-share="tt">${icons.tiktok}<span>TikTok</span></button>
+            <button class="share-btn" type="button" data-share="more">${icons.share}<span>Weitere Apps</span></button>
+            <button class="share-btn" type="button" data-share="save">${icons.download}<span>Bild speichern</span></button>
+          </div>
+          <p class="sheet-note">Format 9:16 – passt für Instagram Story, TikTok und WhatsApp-Status.</p>
         </div>
       </div>
     </section>`,
@@ -773,27 +794,51 @@ function card() {
       window.addEventListener('deviceorientation', onOrient);
       wrap.addEventListener('pointermove', onMove);
 
-      const makeImage = () => renderCardImage({ tier, serial: c.serial, insta: state.user?.insta || '' }, dia.canvas);
+      // Sharing-Bilder werden erst gebaut, wenn sie gebraucht werden, und dann wiederverwendet.
+      const shareData = () => ({ tier, serial: c.serial, insta: state.user?.insta || '', gem: dia.snapshot(900, 700) });
+      let cache = {};
+      const memo = (key, make) => () => (cache[key] ||= make(shareData()));
+      const assets = { story: memo('story', renderStory), sticker: memo('sticker', renderSticker) };
+      instaInput?.addEventListener('change', () => { cache = {}; });
 
-      el.querySelector('[data-share]').addEventListener('click', async () => {
-        const blob = await makeImage();
-        const file = new File([blob], 'fame-card.png', { type: 'image/png' });
-        const text = `Ich habe einen ${tier.name} auf ${APP_NAME} 💎 Nr. ${c.serial} #fame #thentheothers`;
-        try {
-          if (navigator.canShare?.({ files: [file] })) {
-            await navigator.share({ files: [file], text, title: APP_NAME });
-            return;
-          }
-        } catch (err) {
-          if (err?.name === 'AbortError') return;
+      const sheet = el.querySelector('[data-sheet]');
+      const preview = el.querySelector('[data-preview]');
+      let previewUrl = '';
+      const openSheet = async () => {
+        sheet.hidden = false;
+        requestAnimationFrame(() => sheet.classList.add('is-open'));
+        if (!previewUrl) {
+          const story = await assets.story();
+          previewUrl = story.toDataURL('image/jpeg', 0.85);
+          preview.src = previewUrl;
+          el.querySelector('[data-loading]').hidden = true;
         }
-        download(blob);
-        toast('Bild gespeichert – jetzt auf Instagram posten!');
-      });
-      el.querySelector('[data-save]').addEventListener('click', async () => {
-        download(await makeImage());
-        toast('Deine Fame-Card wurde gespeichert.');
-      });
+      };
+      const closeSheet = () => {
+        sheet.classList.remove('is-open');
+        setTimeout(() => { sheet.hidden = true; }, 300);
+      };
+      el.querySelector('[data-open-sheet]').addEventListener('click', openSheet);
+      el.querySelector('[data-close-sheet]').addEventListener('click', closeSheet);
+
+      const ACTIONS = { ig: shareToInstagramStory, tt: shareToTikTok, more: shareElsewhere, save: saveImage };
+      let busy = false;
+      el.querySelectorAll('[data-share]').forEach((b) => b.addEventListener('click', async () => {
+        if (busy) return;
+        busy = true;
+        b.classList.add('is-busy');
+        try {
+          const data = { tier, serial: c.serial, insta: state.user?.insta || '' };
+          const res = await ACTIONS[b.dataset.share](data, assets);
+          if (res.how === 'native' || res.how === 'sheet') { closeSheet(); buzz(15); }
+          if (res.hint) toast(res.hint);
+        } catch {
+          toast('Teilen hat nicht geklappt. Speicher das Bild und lade es selbst hoch.');
+        } finally {
+          busy = false;
+          b.classList.remove('is-busy');
+        }
+      }));
 
       return () => {
         timers.forEach((t) => { clearTimeout(t); clearInterval(t); });
@@ -804,105 +849,6 @@ function card() {
       };
     },
   };
-}
-
-function download(blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'fame-card.png';
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
-}
-
-// Fame-Card als PNG (4:5, Instagram-Format) im Look der Seltenheit zeichnen.
-async function renderCardImage({ tier, serial, insta }, gemCanvas) {
-  await document.fonts?.ready;
-  const W = 1080, H = 1350;
-  const rar = tier.rarity.color;
-  const c = document.createElement('canvas');
-  c.width = W; c.height = H;
-  const g = c.getContext('2d');
-  const font = (w, s, style = '') => `${style} ${w} ${s}px "Source Code Pro", ui-monospace, monospace`;
-
-  g.fillStyle = '#0e0e10';
-  g.fillRect(0, 0, W, H);
-  // Strahlen hinter dem Diamanten
-  g.save();
-  g.translate(W / 2, 560);
-  g.globalAlpha = 0.08 + tier.level * 0.05;
-  g.fillStyle = rar;
-  for (let i = 0; i < 24; i++) {
-    g.rotate((Math.PI * 2) / 24);
-    g.beginPath();
-    g.moveTo(0, 0);
-    g.lineTo(-40, -900);
-    g.lineTo(40, -900);
-    g.fill();
-  }
-  g.restore();
-  const rg = g.createRadialGradient(W / 2, 560, 40, W / 2, 560, 560);
-  rg.addColorStop(0, rar + '99');
-  rg.addColorStop(1, '#0e0e1000');
-  g.fillStyle = rg;
-  g.fillRect(0, 0, W, H);
-
-  // Rahmen: ab "Selten" doppelt, wie bei hochwertigen Gegenständen
-  g.strokeStyle = rar;
-  g.lineWidth = 8;
-  g.shadowColor = rar;
-  g.shadowBlur = tier.level * 14;
-  g.strokeRect(44, 44, W - 88, H - 88);
-  g.shadowBlur = 0;
-  if (tier.level >= 2) {
-    g.lineWidth = 3;
-    g.strokeRect(66, 66, W - 132, H - 132);
-  }
-
-  g.textBaseline = 'alphabetic';
-  g.font = font(800, 80);
-  g.fillStyle = '#3dfa74';
-  g.fillText(LOGO_TEXT, 106, 184);
-  g.fillStyle = '#f8f8f6';
-  g.fillText(LOGO_TEXT, 100, 176);
-  g.font = font(500, 28);
-  g.fillText('then the others', 102, 222);
-
-  g.textAlign = 'right';
-  g.font = font(600, 30);
-  g.fillStyle = '#c9c9c4';
-  g.fillText('Nr.', W - 100, 150);
-  g.font = font(700, 34);
-  g.fillStyle = '#f8f8f6';
-  g.fillText(serial, W - 100, 194);
-
-  if (gemCanvas) {
-    const s = 640;
-    const ratio = gemCanvas.width / gemCanvas.height;
-    const w = ratio >= 1 ? s : s * ratio;
-    const h = ratio >= 1 ? s / ratio : s;
-    g.drawImage(gemCanvas, (W - w) / 2, 560 - h / 2, w, h);
-  }
-
-  g.textAlign = 'center';
-  g.font = font(800, 70);
-  g.fillStyle = rar;
-  g.shadowColor = rar;
-  g.shadowBlur = 24;
-  g.fillText(tier.name, W / 2, 960);
-  g.shadowBlur = 0;
-  g.font = font(500, 34, 'italic');
-  g.fillStyle = '#d9a35b';
-  g.fillText(`„${tier.flavor}“`, W / 2, 1040);
-  if (insta) {
-    g.font = font(600, 40);
-    g.fillStyle = '#f8f8f6';
-    g.fillText('@' + insta, W / 2, 1150);
-  }
-
-  return new Promise((res) => c.toBlob(res, 'image/png'));
 }
 
 // ---- Ranking: zwei Seiten (Bundesland / Länder) --------------------------------

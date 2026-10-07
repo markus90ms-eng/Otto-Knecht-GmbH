@@ -272,7 +272,7 @@ export function createDiamond(container, opts = {}) {
 
   if (!webglAvailable()) {
     container.innerHTML = `<div class="diamond-fallback">${glassDiamond()}</div>`;
-    return { setLevel() {}, setMystery() {}, setRim() {}, setGlow() {}, pulse() {}, canvas: null, dispose() { container.innerHTML = ''; } };
+    return { setLevel() {}, setMystery() {}, setRim() {}, setGlow() {}, pulse() {}, snapshot() { return null; }, canvas: null, dispose() { container.innerHTML = ''; } };
   }
 
   const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true, preserveDrawingBuffer: true });
@@ -360,6 +360,23 @@ export function createDiamond(container, opts = {}) {
     setRim(color) { rimLight.color.set(color); },
     setGlow(v) { glowLevel = Math.max(0, Math.min(1, v)); },
     pulse() { pulseT = 1; },
+    // Scharfes Standbild in beliebiger Größe (für Story- und Sharing-Bilder).
+    snapshot(w, h) {
+      const pr = renderer.getPixelRatio();
+      renderer.setPixelRatio(1);
+      renderer.setSize(w, h, false);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+      gem.update(performance.now() / 1000, 0.35);
+      renderer.render(scene, camera);
+      const out = document.createElement('canvas');
+      out.width = w;
+      out.height = h;
+      out.getContext('2d').drawImage(renderer.domElement, 0, 0, w, h);
+      renderer.setPixelRatio(pr);
+      resize();
+      return out;
+    },
     dispose() {
       cancelAnimationFrame(raf);
       ro.disconnect();
