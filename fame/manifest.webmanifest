@@ -1,0 +1,15 @@
+{
+  "name": "Fame – then the others",
+  "short_name": "Fame",
+  "description": "Zeig was Du dir leisten kannst und tue dabei gutes.",
+  "lang": "de",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f8f8f6",
+  "theme_color": "#f8f8f6",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
