@@ -15,7 +15,7 @@ Die Bilder baut die Web-App selbst (`renderSticker`, `renderStory`), damit Card 
 
 ## Einrichten
 
-1. Capacitor einbinden: `npm i @capacitor/core @capacitor/cli @capacitor/ios @capacitor/android`, `npx cap init Fame app.fame`, `webDir` auf `fame/` zeigen lassen.
+1. Capacitor einbinden: `npm i @capacitor/core @capacitor/cli @capacitor/ios @capacitor/android`, `npx cap init Fame app.fame`, `webDir` auf das Hauptverzeichnis dieses Repos zeigen lassen (dort liegt `index.html`).
 2. **Meta App ID** auf developers.facebook.com anlegen und in beiden Plugin-Dateien eintragen.
 3. **TikTok**: App im TikTok Developer Portal anlegen, „Share Kit“ freischalten lassen, Client Key und Redirect-URI eintragen.
 4. Plugin-Dateien in die Projekte kopieren: `ios/FameSharePlugin.swift`, `android/FameSharePlugin.kt`.

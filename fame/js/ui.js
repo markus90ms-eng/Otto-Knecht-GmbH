@@ -8,12 +8,32 @@ export function esc(s) {
   return String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 }
 
-const DIA_OUTLINE = 'M12 4h24l8 10-20 23L4 14z M4 14h40 M12 4l6 10 6-10 6 10 6-10 M18 14l6 23 6-23';
+// Logo-Diamant: Brillant mit Sternfacetten in der Krone und langen Facetten zur Spitze.
+// Koordinaten im 220er-Raster der Vorlage, umgerechnet auf die 48x40-Box der Icons.
+const DIA_SRC = {
+  crown: [[58, 2], [162, 2], [219, 44], [1, 44]],
+  outline: [[58, 2], [162, 2], [219, 44], [110, 164], [1, 44]],
+  facets: [
+    [[58, 2], [30, 23], [80, 22]], [[58, 2], [80, 22], [110, 2]], [[110, 2], [140, 22], [110, 44], [80, 22]],
+    [[110, 2], [140, 22], [162, 2]], [[162, 2], [190, 22], [140, 22]],
+    [[30, 23], [1, 44], [35, 44]], [[30, 23], [35, 44], [80, 22]], [[80, 22], [35, 44], [110, 44]],
+    [[140, 22], [110, 44], [185, 44]], [[140, 22], [185, 44], [190, 22]], [[190, 22], [185, 44], [219, 44]],
+    [[1, 44], [35, 44], [98, 138], [110, 164]], [[35, 44], [110, 44], [98, 138]], [[110, 44], [122, 138], [98, 138]],
+    [[110, 44], [185, 44], [122, 138]], [[185, 44], [219, 44], [110, 164], [122, 138]], [[98, 138], [122, 138], [110, 164]],
+  ],
+};
+const K = 42 / 220;
+const toBox = (poly) => poly.map(([x, y]) => [+(3 + x * K).toFixed(2), +(4 + y * K).toFixed(2)]);
+export const DIA = { crown: toBox(DIA_SRC.crown), outline: toBox(DIA_SRC.outline), facets: DIA_SRC.facets.map(toBox) };
+const pathOf = (poly) => `M${poly.map((p) => p.join(' ')).join('L')}Z`;
+const DIA_OUTLINE = DIA.facets.map(pathOf).join(' ');
+const DIA_SHAPE = pathOf(DIA.outline);
+const DIA_CROWN = pathOf(DIA.crown);
 
 // Diamant-Icon als Outline (currentColor). Mit `filled` bekommt die Krone eine Füllung.
 export function diamondSvg({ filled = false, cls = '' } = {}) {
   return `<svg class="dia ${cls}" viewBox="0 0 48 40" aria-hidden="true">
-    ${filled ? '<path class="dia-fill" d="M12 4h24l8 10H4z"/>' : ''}
+    ${filled ? `<path class="dia-fill" d="${DIA_CROWN}"/>` : ''}
     <path class="dia-line" d="${DIA_OUTLINE}"/>
   </svg>`;
 }
@@ -27,16 +47,11 @@ export function diamondShadowed(cls = '') {
 let glassId = 0;
 export function glassDiamond(cls = '') {
   const id = `g${++glassId}`;
-  const facets = [
-    ['12,4 4,14 18,14', 0.55, 'a'],
-    ['12,4 18,14 24,4', 0.9, 'b'],
-    ['24,4 18,14 30,14', 0.35, 'a'],
-    ['24,4 30,14 36,4', 0.8, 'b'],
-    ['36,4 30,14 44,14', 0.45, 'a'],
-    ['4,14 18,14 24,37', 0.4, 'c'],
-    ['18,14 30,14 24,37', 0.75, 'b'],
-    ['30,14 44,14 24,37', 0.3, 'c'],
-  ];
+  // Glas-Look: jede Facette mit eigenem Verlauf und eigener Deckkraft
+  const look = [['a', 0.55], ['b', 0.9], ['a', 0.4], ['b', 0.8], ['a', 0.5], ['c', 0.45], ['a', 0.6], ['b', 0.7],
+    ['b', 0.75], ['a', 0.45], ['c', 0.5], ['c', 0.35], ['b', 0.7], ['a', 0.5], ['c', 0.6], ['c', 0.3], ['b', 0.85]];
+  const facets = DIA.facets.map((f, i) => [f.map((p) => p.join(',')).join(' '), look[i][1], look[i][0]]);
+  const sheen = toBox([[64, 8], [76, 8], [50, 32], [38, 32]]).map((p) => p.join(',')).join(' ');
   return `<svg class="glass-dia ${cls}" viewBox="0 0 48 40" aria-hidden="true">
     <defs>
       <linearGradient id="${id}a" x1="0" y1="0" x2="1" y2="1">
@@ -48,17 +63,17 @@ export function glassDiamond(cls = '') {
       <linearGradient id="${id}s" x1="0" y1="0" x2="1" y2="0">
         <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".95"/>
         <stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient>
-      <clipPath id="${id}k"><path d="M12 4h24l8 10-20 23L4 14z"/></clipPath>
+      <clipPath id="${id}k"><path d="${DIA_SHAPE}"/></clipPath>
     </defs>
-    <path class="glass-shadow" d="M12 4h24l8 10-20 23L4 14z" transform="translate(3 3)"/>
+    <path class="glass-shadow" d="${DIA_SHAPE}" transform="translate(3 3)"/>
     <g clip-path="url(#${id}k)">
       ${facets.map(([pts, o, g]) => `<polygon points="${pts}" fill="url(#${id}${g})" fill-opacity="${o}"/>`).join('')}
-      <polygon points="14,6 17,6 11,13 8,13" fill="#fff" fill-opacity=".9"/>
+      <polygon points="${sheen}" fill="#fff" fill-opacity=".85"/>
       <rect class="glass-shine" x="-30" y="-5" width="16" height="50" fill="url(#${id}s)" transform="skewX(-20)"/>
     </g>
     <path class="glass-line" d="${DIA_OUTLINE}"/>
     <path class="glass-spark" d="M40 0l1.4 3.6L45 5l-3.6 1.4L40 10l-1.4-3.6L35 5l3.6-1.4z"/>
-    <path class="glass-spark glass-spark--2" d="M7 22l.9 2.1L10 25l-2.1.9L7 28l-.9-2.1L4 25l2.1-.9z"/>
+    <path class="glass-spark glass-spark--2" d="M6 9.5l.9 2.1L9 12.5l-2.1.9L6 15.5l-.9-2.1L3 12.5l2.1-.9z"/>
   </svg>`;
 }
 
@@ -113,6 +128,7 @@ export function itemTooltip({ name, rarity, type, stats = [], flavor = '', img =
 }
 
 export const icons = {
+  user: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9.5"/><circle cx="12" cy="10" r="3.2"/><path d="M6.2 18.6c1.3-2.3 3.4-3.6 5.8-3.6s4.5 1.3 5.8 3.6"/></svg>`,
   trophy: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 4h10v4a5 5 0 0 1-10 0z M7 6H4a3 3 0 0 0 3 4 M17 6h3a3 3 0 0 1-3 4 M12 13v4 M8 20h8 M9 17h6v3H9z"/></svg>`,
   insta: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="3.5" width="17" height="17" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r=".6"/></svg>`,
   rotate: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 4 0 0 0 16 0 M20 12a8 4 0 0 0-11-3.7 M9 6l-1 2.4 2.6.6"/></svg>`,
@@ -123,5 +139,11 @@ export const icons = {
   tiktok: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3v11.5a3.5 3.5 0 1 1-3.5-3.5 M14 3c.4 2.6 2.2 4.4 5 4.6"/></svg>`,
   share: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15V3 M7.5 7.5 12 3l4.5 4.5 M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>`,
   download: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12 M7.5 10.5 12 15l4.5-4.5 M5 19h14"/></svg>`,
+  snap: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3.5c-3 0-5 2.2-5 5v2.3l-1.8.6c-.5.2-.5.8 0 1l1.6.6c-.5 1.6-1.7 2.8-3.3 3.4.4.8 1.6 1 2.6 1.2.2.6.4 1.1.9 1.1.7 0 1.5-.5 2.6-.2 1 .3 1.6 1.4 2.4 1.4s1.4-1.1 2.4-1.4c1.1-.3 1.9.2 2.6.2.5 0 .7-.5.9-1.1 1-.2 2.2-.4 2.6-1.2-1.6-.6-2.8-1.8-3.3-3.4l1.6-.6c.5-.2.5-.8 0-1l-1.8-.6V8.5c0-2.8-2-5-5-5z"/></svg>`,
+  whatsapp: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20l1.2-4A8.5 8.5 0 1 1 8.3 19z M9 8.5c0 3 3 6.5 6.5 6.5l1-1.5-2-1-1 1c-1.2-.5-2.5-1.8-3-3l1-1-1-2z"/></svg>`,
+  home: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 11.5 12 4l8.5 7.5 M6 10v9.5h4.5V15h3v4.5H18V10"/></svg>`,
   bottle: `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M10 2h4v4l1.5 3v12a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V9L10 6z M8.5 13h7"/></svg>`,
 };
+
+// Symbol je Plattform (Instagram, TikTok, Snapchat)
+export const platformIcon = (id) => ({ ig: icons.insta, tt: icons.tiktok, sc: icons.snap }[id] || icons.user);
