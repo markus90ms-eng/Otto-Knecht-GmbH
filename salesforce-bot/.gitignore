@@ -1,0 +1,4 @@
+.auth/
+.env
+screenshots/
+__pycache__/
