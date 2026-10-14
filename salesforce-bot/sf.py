@@ -25,7 +25,7 @@ def load_env():
 
 
 def sf_url():
-    url = os.environ.get("SF_URL", "").rstrip("/")
+    url = os.environ.get("SF_URL", "https://stroeer-eins.lightning.force.com").rstrip("/")
     if not url:
         sys.exit("SF_URL fehlt. Lege .env an (siehe .env.example).")
     return url
