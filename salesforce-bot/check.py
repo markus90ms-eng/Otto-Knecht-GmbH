@@ -119,6 +119,32 @@ def search_url(term):
     return f"{sf.sf_url()}/one/one.app#{quote(raw, safe='')}"
 
 
+OPTIONS_JS = "() => {" + sf.DEEP + """
+  return deepAll("[role='option'], lightning-base-combobox-item").map((e) => ({
+    text: (e.innerText || '').trim().replace(/\\s+/g, ' '),
+    ausgewaehlt: e.getAttribute('aria-selected') === 'true' || e.classList.contains('slds-is-selected'),
+  })).filter((o) => o.text);
+}"""
+
+
+def combobox_info(page, label):
+    """Öffnet ein Auswahlfeld der Filterleiste und liest aktuellen Wert und alle Optionen (nur zur Analyse)."""
+    out = {}
+    try:
+        btn = page.get_by_role("combobox", name=re.compile(label, re.I)).first
+        if btn.count() == 0:
+            btn = page.locator("button").filter(has_text=re.compile(label, re.I)).first
+        out["aktuell"] = (btn.inner_text(timeout=3000) or "").strip().replace("\n", " ")[:80]
+        btn.click(timeout=5000)
+        page.wait_for_timeout(1500)
+        out["optionen"] = page.evaluate(OPTIONS_JS)
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception as e:
+        out["fehler"] = str(e).strip().splitlines()[0][:150] if str(e).strip() else type(e).__name__
+    return out
+
+
 def decode_fragment(url):
     """Salesforce-Suchadresse (Teil nach '#') -> lesbares JSON. Hilft zu verstehen, wie Filter kodiert werden."""
     try:
@@ -174,6 +200,7 @@ def diagnose_search(term, headed=False, log=print):
                 page.wait_for_timeout(7000)
                 out["3_mit_plz_filter"] = _describe(page, f"PLZ-Filter {plz}")
                 page.screenshot(path=str(sf.SHOTS / "suche_plz.png"), full_page=True)
+                out["4_auswahlfelder"] = {name: combobox_info(page, name) for name in ("Firmenstatus", "Kunden Kontaktsperre")}
             except Exception as e:
                 out["3_mit_plz_filter"] = {"fehler": "Filter nicht bedienbar: " + str(e).strip().splitlines()[0][:150]}
             return out

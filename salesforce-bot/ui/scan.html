@@ -22,11 +22,11 @@
       <button class="primary" id="sc-list">1. Accounts auflisten</button>
     </section>
     <section>
-      <label for="sc-status">2. Firmenstatus enthält</label>
-      <input type="search" id="sc-status" value="Potenzial">
+      <label for="sc-status">2. Firmenstatus enthält (leer = alle)</label>
+      <input type="search" id="sc-status" value="" placeholder="leer = Potenzial, Debitor, Non-Debitor, Lead …">
       <label for="sc-max">Höchstens so viele Accounts lesen</label>
       <input type="search" id="sc-max" value="1500">
-      <p class="hint">Pro Account etwa 10 bis 30 Sekunden. Gesperrte Accounts werden übersprungen.</p>
+      <p class="hint">Pro Account etwa 10 bis 30 Sekunden. Gesperrte Accounts und Auslandsadressen werden übersprungen. Mit einem Wort (z. B. Lead) kannst du auf einen Status eingrenzen.</p>
       <button class="primary" id="sc-det">2. Kontaktdaten lesen</button>
       <button id="sc-stop" style="width:100%;margin-top:8px">Stopp (speichert und beendet)</button>
     </section>
