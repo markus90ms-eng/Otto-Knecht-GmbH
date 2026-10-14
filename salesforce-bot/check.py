@@ -35,6 +35,16 @@ ACCOUNTS_JS = "() => {" + sf.DEEP + """
   return null;
 }"""
 
+DETAIL_JS = "() => {" + sf.DEEP + """
+  const out = {};
+  deepAll('records-record-layout-item, lightning-output-field').forEach((el) => {
+    const l = deepAll('.test-id__field-label, .slds-form-element__label', el)[0];
+    const v = deepAll('.test-id__field-value, .slds-form-element__control', el)[0];
+    if (l && v) out[l.innerText.trim()] = v.innerText.trim();
+  });
+  return out;
+}"""
+
 PAGE_TEXT_JS = """() => {
   const walk = (n) => {
     if (n.nodeType === 3) return n.textContent;
@@ -169,8 +179,9 @@ def truthy(v):
 
 def interpret(row):
     """Account-Zeile -> (Status, Hinweistext).
-    frei = nicht in Salesforce | potenzial = Account vorhanden, Potenzial, nicht gesperrt
-    vergeben = gesperrt oder Kunde | ruhend = Ex-Kunde/inaktiv | unklar"""
+    vergeben = gesperrt (Kundenkontaktsperre oder Account-Sperre-Status) | kunde = Firmenstatus Kunde
+    ruhend = Ex-Kunde/inaktiv | potenzial = Potenzial, nicht gesperrt | unklar.
+    Die Debitoren-Nr. ist NUR eine Information, keine Sperre."""
     firmenstatus = (row.get("Firmenstatus") or "").strip()
     sperre = truthy(row.get("Kunden Kontaktsperre"))
     acc_sperre = (row.get("Account Sperre Status") or "").strip()
@@ -179,16 +190,58 @@ def interpret(row):
     facts = (f"Firmenstatus: {firmenstatus or '–'} · Kontaktsperre: {'JA' if sperre else 'nein'}"
              f" · Sperre-Status: {acc_sperre or '–'} · Debitor: {debitor or '–'} · VIS: {vis or '–'}")
     unlocked = re.fullmatch(r"(keine( sperre)?|nicht gesperrt|-+|ok|aktiv|frei|nein|entsperrt)", acc_sperre.lower())
-    locked = sperre or (acc_sperre and not unlocked)  # unbekannte Werte lieber als gesperrt behandeln
+    locked = sperre or (acc_sperre and not unlocked)  # unbekannte Sperre-Werte lieber als gesperrt behandeln
     if locked:
-        return "vergeben", "NICHT kontaktieren: Sperre gesetzt. " + facts
+        return "vergeben", "GESPERRT, nicht kontaktieren. " + facts
     if re.search(r"\bex\b|ex-|inaktiv|ehemal", firmenstatus, re.I) and not re.search(r"^kunde", firmenstatus, re.I):
-        return "ruhend", "Ehemaliger oder inaktiver Kunde. " + facts
-    if re.search(r"kunde|aktiv", firmenstatus, re.I) or debitor:
-        return "vergeben", "Bestandskunde oder hat Debitoren-Nr. " + facts
+        return "ruhend", "Ehemaliger oder inaktiver Kunde, nicht gesperrt. " + facts
+    if re.search(r"kunde|aktiv", firmenstatus, re.I):
+        return "kunde", "Bestandskunde, nicht gesperrt. " + facts
     if re.search(r"potenzial|interessent|lead|neu", firmenstatus, re.I):
-        return "potenzial", "Account vorhanden, Potenzial, keine Sperre. " + facts
+        return "potenzial", "Account vorhanden (Potenzial), nicht gesperrt. " + facts
     return "unklar", "Status nicht eindeutig. " + facts
+
+
+DATE_RX = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})")
+
+
+def find_date(text):
+    m = DATE_RX.search(text or "")
+    d = sf.parse_date(m.group(1)) if m else None
+    return d.isoformat() if d else ""
+
+
+def read_detail(ctx, url, log):
+    """Öffnet die Account-Seite und liest Inhaber, letzte Aktivität und 'Zuletzt geändert'. Best effort."""
+    page = ctx.new_page()
+    try:
+        page.goto(url)
+        fields = {}
+        for attempt in range(2):
+            try:
+                page.wait_for_selector("records-record-layout-item", timeout=15_000)
+            except Exception:
+                pass
+            page.wait_for_timeout(1500)
+            fields = page.evaluate(DETAIL_JS)
+            if fields or attempt:
+                break
+            try:  # evtl. steht die Seite auf dem Reiter 'Verwandt': zu 'Details' wechseln
+                page.get_by_role("tab", name=re.compile(r"^Details$", re.I)).first.click(timeout=3000)
+            except Exception:
+                pass
+    finally:
+        page.close()
+    pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
+    act_raw, mod_raw = pick(r"letzte aktivit|last activity"), pick(r"zuletzt ge(ä|ae)ndert|last modified")
+    return {
+        "owner": pick(r"inhaber|owner"),
+        "last_activity": find_date(act_raw) if act_raw else "",
+        "last_activity_raw": act_raw[:60],
+        "last_modified": find_date(mod_raw),
+        "last_modified_raw": mod_raw.replace("\n", " ")[:80],
+        "felder": sorted(fields)[:40],
+    }
 
 
 def top_accounts(page, term, log):
@@ -236,7 +289,18 @@ def check_one(page, lead, log):
     if not out:
         return {"status": "frei", "note": "Nicht in Salesforce gefunden.", "matches": [], "checked": datetime.now().isoformat(timespec="seconds")}
     best = out[0]
+    if best["url"]:
+        try:
+            best.update(read_detail(page.context, best["url"], log))
+        except Exception as e:
+            log(f"  Detailseite nicht lesbar: {str(e).splitlines()[0][:100]}")
     status, note = best["status"], best["note"]
+    if best.get("last_activity"):
+        days = (datetime.now().date() - datetime.fromisoformat(best["last_activity"]).date()).days
+        best["tage_ohne_aktivitaet"] = days
+        note += f" · Letzte Aktivität: {best['last_activity']} (vor {days} Tagen)"
+    if best.get("last_modified"):
+        note += f" · Zuletzt geändert: {best['last_modified']}"
     if best["art"] == "aehnlich":
         status, note = "unklar", f"Ähnlicher Account „{best['name']}“ mit gleicher PLZ. Prüfen! " + best["note"]
     elif len(out) > 1 and any(m["status"] == "vergeben" for m in out[1:]) and status != "vergeben":

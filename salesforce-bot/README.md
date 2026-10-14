@@ -53,5 +53,7 @@ In der Leadgenerator-Seite gibt es denselben Abgleich über den Knopf "Mit Sales
 ## Abgleich über die Salesforce-Suche (aktuell)
 Der Abgleich öffnet pro Firma die Salesforce-Suche und liest die Account-Tabelle der Trefferseite
 (Firmenstatus, Kunden Kontaktsperre, Account Sperre Status, VIS ID, Debitoren-Nr., PLZ).
-Ergebnis: nicht in Salesforce / Potenzial-Account ohne Sperre / Ex-Kunde / gesperrt oder Kunde (nicht kontaktieren).
-Unbekannte Werte im Feld "Account Sperre Status" werden vorsichtshalber als gesperrt behandelt.
+Ergebnis: nicht in Salesforce / Potenzial-Account / Bestandskunde / Ex-Kunde (jeweils nicht gesperrt) / gesperrt (nicht kontaktieren).
+Gesperrt ist ein Account nur bei gesetzter Kundenkontaktsperre oder einem Wert im Feld "Account Sperre Status" (unbekannte Werte vorsichtshalber als gesperrt).
+Die Debitoren-Nr. ist nur eine Information und keine Sperre.
+Zusätzlich wird auf der Account-Seite Inhaber, Letzte Aktivität und Zuletzt geändert gelesen (soweit im Seitenlayout vorhanden).
