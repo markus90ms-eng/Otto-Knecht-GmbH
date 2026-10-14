@@ -274,7 +274,10 @@ def read_detail(ctx, url, log):
         except Exception:
             pass
         page.wait_for_timeout(1200)
-        fields.update(page.evaluate(DETAIL_JS))
+        try:
+            fields.update(page.evaluate(DETAIL_JS))
+        except Exception as e:
+            timeline["fehler"] = "Felder lesen: " + (str(e).strip().splitlines()[0][:150] if str(e).strip() else type(e).__name__)
 
     try:
         page.goto(url)
@@ -301,7 +304,7 @@ def read_detail(ctx, url, log):
             if not timeline["datum"]:
                 timeline["zeilen"] = lines[:25]
         except Exception as e:
-            timeline["fehler"] = str(e).splitlines()[0][:100]
+            timeline["fehler"] = ((timeline.get("fehler", "") + " | ") if timeline.get("fehler") else "") + "Aktivität: " + (str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__)
     finally:
         page.close()
     pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
@@ -368,7 +371,8 @@ def check_one(page, lead, log):
         try:
             best.update(read_detail(page.context, best["url"], log))
         except Exception as e:
-            log(f"  Detailseite nicht lesbar: {str(e).splitlines()[0][:100]}")
+            best["detail_fehler"] = str(e).strip().splitlines()[0][:200] if str(e).strip() else type(e).__name__
+            log(f"  Detailseite nicht lesbar: {best['detail_fehler']}")
     status, note = best["status"], best["note"]
     # Letzter Kontakt = jüngeres Datum aus 'Letzte Aktivität' und 'Zuletzt geändert' (bei euch zählt beides als Kontakt)
     dates = [(d, q) for d, q in ((best.get("last_activity"), "Aktivität"), (best.get("last_modified"), "Änderung")) if d]
