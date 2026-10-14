@@ -59,7 +59,9 @@
 
   function render() {
     const text = $("#sc-text").value.trim().toLowerCase().split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
-    const age = +$("#sc-age").value, cut = age ? monthsAgo(age) : "", nodate = $("#sc-nodate").checked, onlyRead = $("#sc-onlyread").checked;
+    // Solange noch keine Kontaktdaten gelesen sind, wären die Filter "gelesen" und "Kontakt älter als" immer leer: dann alle Accounts zeigen
+    const anyRead = sc.rows.some((r) => r.gelesen);
+    const age = anyRead ? +$("#sc-age").value : 0, cut = age ? monthsAgo(age) : "", nodate = $("#sc-nodate").checked, onlyRead = $("#sc-onlyread").checked && anyRead;
     let rows = sc.rows.filter((r) =>
       (!onlyRead || r.gelesen) &&
       (!text.length || text.some((t) => (/^\d+$/.test(t) ? r.plz.startsWith(t) : `${r.ort} ${r.name}`.toLowerCase().includes(t)))) &&
@@ -67,7 +69,7 @@
     rows.sort((a, b) => (a.letzter_kontakt || "0000").localeCompare(b.letzter_kontakt || "0000") || a.plz.localeCompare(b.plz));
     sc.visible = rows;
     $("#sc-warn").innerHTML = (sc.capped && sc.capped.length ? `<div class="sf-warn">Bei diesen PLZ gibt es evtl. <b>mehr Accounts als sichtbar</b> (Grenze der Trefferseite, meist 50): ${esc(sc.capped.slice(0, 40).join(", "))}${sc.capped.length > 40 ? " …" : ""}</div>` : "") + (sc.failed && sc.failed.length ? `<div class="sf-warn">Nicht lesbar (bitte nochmal auflisten): ${esc(sc.failed.slice(0, 40).join(", "))}</div>` : "");
-    $("#summary").innerHTML = `<b>${rows.length}</b> Treffer · ${sc.rows.length} Accounts aufgelistet · ${sc.rows.filter((r) => r.gelesen).length} Kontaktdaten gelesen`;
+    $("#summary").innerHTML = `<b>${rows.length}</b> Treffer · ${sc.rows.length} Accounts aufgelistet · ${sc.rows.filter((r) => r.gelesen).length} Kontaktdaten gelesen` + (sc.rows.length && !anyRead ? " · <i>Kontaktdaten noch nicht gelesen: alle aufgelisteten Accounts werden gezeigt</i>" : "");
     if (!sc.rows.length) { $("#results").innerHTML = `<div class="sf-empty"><h3>Noch nichts gescannt</h3><p>Links auf <b>1. Accounts auflisten</b> klicken. Danach <b>2. Kontaktdaten lesen</b>.</p></div>`; return; }
     $("#results").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ / Ort</th><th>Firmenstatus</th><th>Letzter Kontakt</th><th>Inhaber</th><th></th></tr></thead><tbody>${
       rows.slice(0, sc.limit).map((r) => `<tr><td class="name">${esc(r.name)}</td><td>${esc(r.plz)} ${esc(r.ort)}<div class="sub">${esc(r.strasse)}</div></td><td>${esc(r.status)}${r.sperre ? " · <b>Kontaktsperre</b>" : ""}</td>

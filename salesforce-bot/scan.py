@@ -85,8 +85,22 @@ def read_rows(page):
     return list(seen.values())
 
 
-def fetch_prefix(page, prefix, term_tpl, log):
-    """Account-Trefferseite öffnen, PLZ-Filter setzen, Zeilen lesen. Gibt (Zeilen, 'ok'|'leer') zurück."""
+def parse_row(r, prefix):
+    plz = (r.get("PLZ (Rechnungsanschrift)") or "").strip()
+    if not plz.startswith(prefix):
+        return None  # Treffer außerhalb des PLZ-Bereichs (z. B. Zufallstreffer der Suche)
+    href = r.get("__href", "")
+    return {
+        "id": account_id(href), "name": r.get("Accountname", ""), "plz": plz,
+        "ort": r.get("Stadt (Rechnungsanschrift)", ""), "strasse": r.get("Straße (Rechnungsanschrift)", ""),
+        "status": r.get("Firmenstatus", ""), "sperre": check.truthy(r.get("Kunden Kontaktsperre")),
+        "sperre_status": r.get("Account Sperre Status", ""), "vis": r.get("VIS ID", ""), "debitor": r.get("Debitoren-Nr.", ""),
+        "url": (sf.sf_url() + href) if href.startswith("/") else href,
+    }
+
+
+def open_scoped(page, prefix, term_tpl, log):
+    """Suche öffnen, zur Account-Trefferseite wechseln, PLZ-Filter setzen. Gibt 'ok' oder 'leer' zurück."""
     term = term_tpl.format(p=prefix)
     url = check.search_url(term)
     page.goto("about:blank")
@@ -99,34 +113,77 @@ def fetch_prefix(page, prefix, term_tpl, log):
         page.get_by_role("link", name=re.compile(r"Mehr anzeigen.*Accounts", re.I | re.S)).first.click(timeout=8000)
     except Exception:
         if re.search(r"Keine Ergebnisse|keine Treffer|No results", page.evaluate(check.PAGE_TEXT_JS), re.I) or check_no_accounts(page):
-            return [], "leer"
+            return "leer"
         raise RuntimeError("Wechsel zur Account-Trefferseite nicht möglich (Seite: %s)" % page.url.split("#")[0])
     page.wait_for_timeout(6000)
-    box = page.get_by_label(re.compile(r"^PLZ", re.I)).first
-    box.fill(prefix, timeout=8000)
+    set_filter(page, r"^PLZ", prefix)
+    apply_filters(page, 6000)
+    return "ok"
+
+
+def set_filter(page, label_rx, value):
+    page.get_by_label(re.compile(label_rx, re.I)).first.fill(value, timeout=8000)
+
+
+def apply_filters(page, wait_ms=4500):
     page.get_by_role("button", name=re.compile(r"Anwenden", re.I)).first.click(timeout=8000)
-    page.wait_for_timeout(6000)
-    rows = read_rows(page)
-    label = ""
+    page.wait_for_timeout(wait_ms)
+
+
+def result_label(page):
     try:
-        label = next((l for l in page.evaluate(check.LINES_JS) if re.match(r"^[\d.]+\+?\s+Ergebnis", l)), "")
+        return next((l for l in page.evaluate(check.LINES_JS) if re.match(r"^[\d.]+\+?\s+Ergebnis", l)), "")
     except Exception:
-        pass
+        return ""
+
+
+def fetch_prefix(page, prefix, term_tpl, log):
+    """Gibt (Zeilen, 'ok'|'capped'|'leer') zurück."""
+    if open_scoped(page, prefix, term_tpl, log) == "leer":
+        return [], "leer"
+    rows = read_rows(page)
+    label = result_label(page)
     log(f"    PLZ {prefix}: {len(rows)} Zeilen gelesen (Salesforce meldet: {label or 'k. A.'})")
-    out = []
-    for r in rows:
-        plz = (r.get("PLZ (Rechnungsanschrift)") or "").strip()
-        if not plz.startswith(prefix):
-            continue  # Treffer außerhalb des PLZ-Bereichs (z. B. Zufallstreffer der Suche)
-        href = r.get("__href", "")
-        out.append({
-            "id": account_id(href), "name": r.get("Accountname", ""), "plz": plz,
-            "ort": r.get("Stadt (Rechnungsanschrift)", ""), "strasse": r.get("Straße (Rechnungsanschrift)", ""),
-            "status": r.get("Firmenstatus", ""), "sperre": check.truthy(r.get("Kunden Kontaktsperre")),
-            "sperre_status": r.get("Account Sperre Status", ""), "vis": r.get("VIS ID", ""), "debitor": r.get("Debitoren-Nr.", ""),
-            "url": (sf.sf_url() + href) if href.startswith("/") else href,
-        })
+    out = [x for x in (parse_row(r, prefix) for r in rows) if x]
     return out, ("capped" if label.rstrip().endswith("+") else "ok")
+
+
+NAME_CHARS = list("abcdefghijklmnopqrstuvwxyzäöü0123456789") + list("-_(\"'&.+#/@")
+NEXT_CHARS = list("abcdefghijklmnopqrstuvwxyzäöüß0123456789 -.&")
+MAX_DEPTH = 4
+
+
+def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop):
+    """Eine PLZ mit mehr Accounts als sichtbar: zusätzlich nach einem Textfeld (Anfang) aufteilen.
+    Gibt (Zeilen, vollständig) zurück oder (None, False), wenn das Feld nicht nach 'beginnt mit' filtert."""
+    if open_scoped(page, plz, term_tpl, log) == "leer":
+        return [], True
+    found, complete, semantics = {}, True, None
+    queue = list(chars)
+    asked = 0
+    while queue and not stop.is_set():
+        pre = queue.pop(0)
+        set_filter(page, field_rx, pre)
+        apply_filters(page)
+        rows = [x for x in (parse_row(r, plz) for r in read_rows(page)) if x]
+        asked += 1
+        key_of = (lambda r: r["name"]) if "Accountname" in field_rx else (lambda r: r["vis"])
+        if semantics is None and rows:  # erste Abfrage mit Treffern: filtert das Feld wirklich nach dem Anfang?
+            ok = sum(1 for r in rows if key_of(r).lower().startswith(pre.lower()))
+            semantics = "prefix" if ok >= max(1, int(0.8 * len(rows))) else "contains"
+            if semantics == "contains":
+                log(f"    {plz}: Feld {field_rx} filtert nicht nach 'beginnt mit' ({ok}/{len(rows)}), Aufteilen so nicht möglich.")
+                return None, False
+        for r in rows:
+            found[r["id"] or r["url"] or r["name"] + r["plz"]] = r
+        if len(rows) >= CAP:
+            if len(pre) < MAX_DEPTH:
+                queue = [pre + c for c in nexts] + queue
+            else:
+                complete = False
+        if asked % 10 == 0:
+            log(f"    {plz}: {asked} Teilabfragen, {len(found)} Accounts bisher, noch {len(queue)} offen")
+    return list(found.values()), complete and not stop.is_set()
 
 
 def check_no_accounts(page):
@@ -181,8 +238,28 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                 ok_count += 1
                 at_limit = len(rows) >= CAP or state == "capped"
                 if at_limit and len(prefix) == 5:
-                    data["capped"] = sorted(set(data.get("capped", [])) | {prefix})
-                    log(f"  ACHTUNG PLZ {prefix}: {len(rows)} Zeilen, evtl. gibt es mehr Accounts als sichtbar (Grenze der Trefferseite).")
+                    log(f"  PLZ {prefix}: {len(rows)} Zeilen (Grenze), teile nach Accountnamen auf ...")
+                    more, complete = None, False
+                    for field_rx, chars, nexts in ((r"^Accountname$", NAME_CHARS, NEXT_CHARS), (r"^VIS ID$", list("0123456789"), list("0123456789"))):
+                        try:
+                            more, complete = split_capped(page, prefix, term_tpl, field_rx, chars, nexts, log, stop)
+                        except sf.NeedLogin:
+                            raise
+                        except Exception as e:
+                            log(f"    Aufteilen fehlgeschlagen: {str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__}")
+                            more, complete = None, False
+                        if more is not None:
+                            break
+                    if more is not None:
+                        by_key = {(r["id"] or r["url"] or r["name"] + r["plz"]): r for r in rows}
+                        for r in more:
+                            by_key[r["id"] or r["url"] or r["name"] + r["plz"]] = r
+                        rows = list(by_key.values())
+                        log(f"  PLZ {prefix}: nach Aufteilen {len(rows)} Accounts" + ("" if complete else " (evtl. unvollständig)"))
+                    if more is None or not complete:
+                        data["capped"] = sorted(set(data.get("capped", [])) | {prefix})
+                        log(f"  ACHTUNG PLZ {prefix}: evtl. gibt es mehr Accounts als gelesen (Grenze der Trefferseite).")
+                    at_limit = False
                 if at_limit and len(prefix) < 5:
                     log(f"  {prefix}: {len(rows)} Zeilen (Grenze erreicht), verfeinere ...")
                     refined.add(prefix)
