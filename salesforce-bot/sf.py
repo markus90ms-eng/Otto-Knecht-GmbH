@@ -147,28 +147,23 @@ def read_all_rows(page):
     print("Warte auf die Tabelle ...", flush=True)
     page.wait_for_selector("table[role='grid'] tbody tr", timeout=60_000)
     rows = page.locator("table[role='grid'] tbody tr")
-    last = -1
-    while rows.count() != last:
-        last = rows.count()
+    last = rows.count()
+    while True:
         print(f"  {last} Zeilen geladen ...", flush=True)
         rows.last.scroll_into_view_if_needed()
-        page.wait_for_timeout(1500)
-    data = []
-    for i in range(rows.count()):
-        row = {}
-        for cell in rows.nth(i).locator("[data-label]").all():
-            row[cell.get_attribute("data-label")] = cell.inner_text().strip()
-        data.append(row)
-    return data
-
-
-# ---------- Daten sammeln: erst Salesforce-Abfrage (alle Treffer), sonst Listenansicht ----------
-
-API_VERSION = "v59.0"
-
-
-class NeedLogin(Exception):
-    pass
+        for _ in range(20):  # bis zu 4 s auf neue Zeilen warten
+            page.wait_for_timeout(200)
+            if rows.count() > last:
+                break
+        else:
+            break
+        last = rows.count()
+    # alle Zeilen in einem Rutsch aus dem Browser holen (viel schneller als einzeln)
+    return page.evaluate("""() => [...document.querySelectorAll("table[role='grid'] tbody tr")].map((tr) => {
+        const o = {};
+        tr.querySelectorAll('[data-label]').forEach((c) => { o[c.getAttribute('data-label')] = c.innerText.trim(); });
+        return o;
+    })""")
 
 
 def api_base():
