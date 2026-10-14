@@ -31,7 +31,7 @@ def sf_url():
     return url
 
 
-def cmd_login(_args):
+def do_login(log=print):
     """Browser öffnen, du loggst dich selbst ein (inkl. 2FA), Sitzung wird gespeichert."""
     STATE.parent.mkdir(exist_ok=True)
     with sync_playwright() as p:
@@ -39,11 +39,16 @@ def cmd_login(_args):
         ctx = browser.new_context()
         page = ctx.new_page()
         page.goto(sf_url())
-        print("Bitte im Browser einloggen. Warte bis Salesforce (Lightning) geladen ist ...")
+        log("Bitte im Browser einloggen. Warte bis Salesforce (Lightning) geladen ist ...")
         page.wait_for_url("**/lightning/**", timeout=300_000)
+        page.wait_for_timeout(3000)
         ctx.storage_state(path=str(STATE))
-        print(f"Sitzung gespeichert in {STATE}")
+        log(f"Sitzung gespeichert in {STATE}")
         browser.close()
+
+
+def cmd_login(_args):
+    do_login()
 
 
 def _session(p, headed):
@@ -140,56 +145,127 @@ def read_all_rows(page):
     return data
 
 
-def cmd_bw(args):
-    """Firmen in Baden-Württemberg (PLZ 7*, 88*, 89*) ohne Aktivität seit N Tagen."""
-    cutoff = date.today() - timedelta(days=args.tage)
-    print("Starte Browser ...", flush=True)
+# ---------- Daten sammeln: erst Salesforce-Abfrage (alle Treffer), sonst Listenansicht ----------
+
+API_VERSION = "v59.0"
+
+
+class NeedLogin(Exception):
+    pass
+
+
+def api_base():
+    return os.environ.get("SF_API_URL") or sf_url().replace(".lightning.force.com", ".my.salesforce.com")
+
+
+def soql_for(cutoff):
+    like = " OR ".join(f"BillingPostalCode LIKE '{p}%'" for p in BW_PREFIXES)
+    return (
+        "SELECT Id, Name, BillingPostalCode, BillingCity, LastActivityDate, Owner.Name "
+        f"FROM Account WHERE ({like}) "
+        f"AND (LastActivityDate = NULL OR LastActivityDate < {cutoff.isoformat()}) "
+        "ORDER BY Name"
+    )
+
+
+def fetch_via_api(ctx, cutoff, log):
+    """Fragt Salesforce direkt per SOQL ab (mit der Browser-Sitzung). Keine 2000er-Grenze."""
+    base = api_base()
+    sids = [c["value"] for c in ctx.cookies() if c["name"] == "sid" and "salesforce.com" in c["domain"]]
+    sids += [c["value"] for c in ctx.cookies() if c["name"] == "sid" and "force.com" in c["domain"]]
+    if not sids:
+        raise RuntimeError("keine Sitzungs-Kennung (sid) gefunden")
+    last_err = "unbekannt"
+    for sid in dict.fromkeys(sids):
+        headers = {"Authorization": f"Bearer {sid}"}
+        resp = ctx.request.get(f"{base}/services/data/{API_VERSION}/query", params={"q": soql_for(cutoff)}, headers=headers)
+        if not resp.ok:
+            last_err = f"HTTP {resp.status}: {resp.text()[:300]}"
+            continue
+        records, data = [], resp.json()
+        while True:
+            records += data["records"]
+            log(f"  {len(records)} von {data['totalSize']} Treffern geladen ...")
+            if data.get("done", True):
+                return records
+            data = ctx.request.get(base + data["nextRecordsUrl"], headers=headers).json()
+    raise RuntimeError(last_err)
+
+
+def normalize_api(records):
+    out = []
+    for r in records:
+        plz = (r.get("BillingPostalCode") or "").strip()
+        if not (len(plz) == 5 and plz.isdigit() and plz.startswith(BW_PREFIXES)):
+            continue
+        out.append({
+            "id": r["Id"], "name": r["Name"], "plz": plz, "ort": r.get("BillingCity") or "",
+            "letzte_aktivitaet": r.get("LastActivityDate") or "nie",
+            "betreuer": (r.get("Owner") or {}).get("Name") or "",
+            "url": f"{sf_url()}/lightning/r/Account/{r['Id']}/view",
+        })
+    return out
+
+
+def collect(days=90, headed=False, liste="AllAccounts", log=print):
+    """Liefert (Liste von Firmen, Quelle). Wirft NeedLogin, wenn die Sitzung fehlt/abgelaufen ist."""
+    if not STATE.exists():
+        raise NeedLogin("Noch nicht eingeloggt.")
+    cutoff = date.today() - timedelta(days=days)
     with sync_playwright() as p:
-        browser, ctx = _session(p, args.headed)
-        page = ctx.new_page()
+        browser, ctx = _session(p, headed)
         try:
-            print(f"Öffne Liste {args.liste} ...", flush=True)
-            page.goto(f"{sf_url()}/lightning/o/Account/list?filterName={args.liste}")
-            print(f"Seite: {page.url}", flush=True)
+            page = ctx.new_page()
+            log("Öffne Salesforce ...")
+            page.goto(f"{sf_url()}/lightning/page/home")
+            page.wait_for_timeout(2500)
             if "login" in page.url:
-                sys.exit("Sitzung abgelaufen. Bitte neu: python sf.py login")
+                raise NeedLogin("Sitzung abgelaufen.")
+            try:
+                log("Frage Salesforce direkt ab ...")
+                return normalize_api(fetch_via_api(ctx, cutoff, log)), "Salesforce-Abfrage (vollständig)"
+            except Exception as e:  # API gesperrt o. ä. -> Rückfall auf Listenansicht
+                log(f"Direkte Abfrage nicht möglich ({e}). Lese stattdessen die Listenansicht ...")
+            page.goto(f"{sf_url()}/lightning/o/Account/list?filterName={liste}")
+            if "login" in page.url:
+                raise NeedLogin("Sitzung abgelaufen.")
             rows = read_all_rows(page)
-        except Exception as e:
-            SHOTS.mkdir(exist_ok=True)
-            shot = SHOTS / "fehler.png"
-            page.screenshot(path=str(shot), full_page=True)
-            sys.exit(f"Fehler: {type(e).__name__}: {e}\nScreenshot: {shot}")
         finally:
             browser.close()
-
     if not rows:
-        sys.exit("Keine Zeilen gefunden.")
-    if len(rows) >= 2000:
-        print(
-            "\n!!! ACHTUNG: Salesforce zeigt in Listenansichten höchstens 2000 Einträge. "
-            "Die Liste ist wahrscheinlich UNVOLLSTÄNDIG.\n"
-            "!!! Lösung: In Salesforce eine Listenansicht mit den Filtern (PLZ, Letzte Aktivität) "
-            "anlegen und mit --liste <ID> verwenden. Siehe README.\n"
-        )
+        raise RuntimeError("Keine Zeilen in der Listenansicht gefunden.")
     labels = list(rows[0].keys())
     plz = find_label(labels, ("postal", "zip", "postleitzahl", "plz"), avoid=("shipping", "liefer"))
     act = find_label(labels, ("last activity", "letzte aktivit"))
     if not plz or not act:
-        sys.exit(
-            "In der Listenansicht fehlen Spalten.\n"
-            f"Gefunden: {labels}\n"
-            "Bitte in Salesforce in der Listenansicht die Spalten 'Rechnungsadresse PLZ' "
-            "und 'Letzte Aktivität' einblenden (Zahnrad > Angezeigte Felder auswählen)."
-        )
-    hits = filter_rows(rows, plz, act, cutoff)
-    name_col = labels[0]
-    print(f"{len(rows)} Firmen gelesen, {len(hits)} in BW ohne Aktivität seit {cutoff}.")
+        raise RuntimeError(f"In der Listenansicht fehlen die Spalten PLZ und Letzte Aktivität. Gefunden: {labels}")
+    out = []
+    for r in filter_rows(rows, plz, act, cutoff):
+        out.append({
+            "id": "", "name": r.get(labels[0], ""), "plz": r.get(plz, ""), "ort": "",
+            "letzte_aktivitaet": r["_letzte_aktivitaet"], "betreuer": "", "url": "",
+        })
+    note = "Listenansicht"
+    if len(rows) >= 2000:
+        note += " – UNVOLLSTÄNDIG (Salesforce zeigt max. 2000 Einträge)"
+    return out, note
+
+
+def cmd_bw(args):
+    """Firmen in Baden-Württemberg (PLZ 7*, 88*, 89*) ohne Aktivität seit N Tagen."""
+    try:
+        hits, source = collect(args.tage, args.headed, args.liste)
+    except NeedLogin as e:
+        sys.exit(f"{e} Bitte zuerst: python sf.py login")
+    except Exception as e:
+        sys.exit(f"Fehler: {type(e).__name__}: {e}")
+    print(f"{len(hits)} Firmen in BW ohne Aktivität seit {args.tage} Tagen. Quelle: {source}")
     for r in hits:
-        print(f"{r.get(plz, '')} | {r.get(name_col, '')} | letzte Aktivität: {r['_letzte_aktivitaet']}")
+        print(f"{r['plz']} | {r['name']} | letzte Aktivität: {r['letzte_aktivitaet']}")
     OUT.mkdir(exist_ok=True)
     path = OUT / f"bw_ohne_aktivitaet_{date.today().isoformat()}.csv"
     with open(path, "w", newline="", encoding="utf-8-sig") as f:
-        w = csv.DictWriter(f, fieldnames=labels + ["_letzte_aktivitaet"], delimiter=";")
+        w = csv.DictWriter(f, fieldnames=["name", "plz", "ort", "letzte_aktivitaet", "betreuer", "url"], delimiter=";", extrasaction="ignore")
         w.writeheader()
         w.writerows(hits)
     print(f"CSV gespeichert: {path}")

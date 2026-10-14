@@ -33,3 +33,9 @@ Listenansichten zeigen höchstens 2000 Einträge. Dann in Salesforce eine eigene
 Filter: Rechnungsadresse PLZ beginnt mit 7, 88, 89 und Letzte Aktivität älter als 90 Tage.
 Die ID der Ansicht steht in der Adresszeile (`...list?filterName=00B...`). Dann:
     python sf.py bw --liste 00B...
+
+## Ein-Klick-Betrieb mit dem Leadgenerator
+1. `Salesforce_starten.bat` doppelklicken (Fenster offen lassen). Es öffnet die Leadgenerator-Seite im Tab **Salesforce**.
+2. Beim ersten Mal dort auf **Bei Salesforce einloggen** klicken, danach auf **Liste erstellen**.
+Der Server (`server.py`) läuft nur auf 127.0.0.1:8766 und antwortet nur der Leadgenerator-Seite. Die Kundendaten werden nicht hochgeladen.
+Abfrage: erst direkt per SOQL (alle Treffer, ohne 2000er-Grenze), sonst Rückfall auf die Listenansicht.
