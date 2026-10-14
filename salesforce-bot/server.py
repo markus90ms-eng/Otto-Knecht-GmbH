@@ -23,7 +23,7 @@ ALLOWED_ORIGINS = {
 LATEST = sf.OUT / "salesforce_latest.json"
 
 job = {"state": "idle", "kind": "", "log": [], "message": "", "updated": ""}
-result = {"rows": [], "source": "", "days": 90, "updated": ""}
+result = {"rows": [], "source": "", "has_bookings": False, "updated": ""}
 lock = threading.Lock()
 
 
@@ -38,8 +38,9 @@ def run_job(kind, days, headed):
             sf.do_login(log)
             job.update(state="done", message="Eingeloggt.")
         else:
-            rows, source = sf.collect(days, headed, log=log)
-            result.update(rows=rows, source=source, days=days, updated=datetime.now().isoformat(timespec="seconds"))
+            rows, source, has_bookings = sf.collect(headed, log=log)
+            result.update(rows=rows, source=source, has_bookings=has_bookings,
+                          updated=datetime.now().isoformat(timespec="seconds"))
             sf.OUT.mkdir(exist_ok=True)
             LATEST.write_text(json.dumps(result, ensure_ascii=False), encoding="utf-8")
             job.update(state="done", message=f"{len(rows)} Firmen gefunden ({source}).")
