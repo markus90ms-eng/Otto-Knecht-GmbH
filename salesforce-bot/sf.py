@@ -164,6 +164,13 @@ def cmd_bw(args):
 
     if not rows:
         sys.exit("Keine Zeilen gefunden.")
+    if len(rows) >= 2000:
+        print(
+            "\n!!! ACHTUNG: Salesforce zeigt in Listenansichten höchstens 2000 Einträge. "
+            "Die Liste ist wahrscheinlich UNVOLLSTÄNDIG.\n"
+            "!!! Lösung: In Salesforce eine Listenansicht mit den Filtern (PLZ, Letzte Aktivität) "
+            "anlegen und mit --liste <ID> verwenden. Siehe README.\n"
+        )
     labels = list(rows[0].keys())
     plz = find_label(labels, ("postal", "zip", "postleitzahl", "plz"), avoid=("shipping", "liefer"))
     act = find_label(labels, ("last activity", "letzte aktivit"))

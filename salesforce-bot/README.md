@@ -27,3 +27,9 @@ Ergebnis: Ausgabe im Terminal plus CSV in `output/` (git-ignoriert, enthält Kun
 1. `1_einrichten.bat` (einmalig)
 2. `2_einloggen.bat` (bei Bedarf wiederholen, wenn die Sitzung abläuft)
 3. `3_BW_Liste_erstellen.bat`
+
+## Mehr als 2000 Konten (Grenze von Salesforce)
+Listenansichten zeigen höchstens 2000 Einträge. Dann in Salesforce eine eigene Listenansicht anlegen:
+Filter: Rechnungsadresse PLZ beginnt mit 7, 88, 89 und Letzte Aktivität älter als 90 Tage.
+Die ID der Ansicht steht in der Adresszeile (`...list?filterName=00B...`). Dann:
+    python sf.py bw --liste 00B...
