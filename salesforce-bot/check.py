@@ -156,6 +156,8 @@ def search_terms(name):
     terms = [" ".join(toks[:4])]
     if len(toks) > 2:
         terms.append(" ".join(toks[:2]))
+    if toks and len(toks[0]) >= 4:
+        terms.append(toks[0])  # zuletzt nur das erste Wort (meist die Marke), die Namensprüfung filtert danach
     return [t for t in dict.fromkeys(terms) if t]
 
 

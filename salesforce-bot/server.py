@@ -16,6 +16,7 @@ import check
 import sf
 
 PORT = 8766
+VERSION = "2026-10-14-12 (Suche über Salesforce-Trefferseite)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
@@ -128,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/status":
             return self._send(200, {
                 **job, "logged_in": sf.STATE.exists(),
-                "count": len(result["rows"]), "result_updated": result["updated"],
+                "count": len(result["rows"]), "result_updated": result["updated"], "version": VERSION,
             })
         if path == "/result":
             return self._send(200, result)
@@ -194,6 +195,7 @@ def main():
     except OSError:
         sys.exit(f"Port {PORT} ist schon belegt. Läuft der Server evtl. schon in einem anderen Fenster?")
     print(f"Salesforce-Server läuft auf http://127.0.0.1:{PORT}")
+    print(f"Programmversion: {VERSION}")
     print(f"Die Seite öffnet sich automatisch. Falls nicht: {PAGE} im Browser öffnen.")
     print("Dieses Fenster offen lassen, solange du die Liste nutzt. Zum Beenden: Fenster schließen.")
     if "--no-browser" not in sys.argv:

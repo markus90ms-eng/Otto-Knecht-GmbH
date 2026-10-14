@@ -31,6 +31,7 @@
         <option value="kontakt_unbekannt">Account, Kontaktdatum nicht lesbar</option>
         <option value="unklar">Account, Details unklar</option>
       </select>
+      <p class="hint" id="ver">Programmversion: wird geprüft …</p>
       <p class="hint">Voraussetzung: Du bist über die Seite „Kundenliste“ bei Salesforce eingeloggt. Die Prüfung läuft nur lesend und dauert etwa 5 Sekunden pro Firma (höchstens 40 auf einmal).</p>
     </section>
   </aside>
@@ -67,6 +68,7 @@
       : `<div class="sf-empty"><h3>Firmen eintragen</h3><p>Links die Firmennamen einfügen, eine pro Zeile, und auf <b>Mit Salesforce abgleichen</b> klicken.</p></div>`;
   }
   render();
+  sfcCall("/status").then((s) => { $("#ver").textContent = "Programmversion: " + (s.version || "ALT (vor 14.10. Version 12), bitte neu herunterladen"); }).catch(() => { $("#ver").textContent = "Programmversion: nicht erreichbar"; });
   $("#diag-run").onclick = async () => {
     const term = $("#diag-term").value.trim();
     if (!term) return;
