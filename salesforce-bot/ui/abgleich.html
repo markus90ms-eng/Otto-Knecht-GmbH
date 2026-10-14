@@ -29,6 +29,12 @@
     </section>
   </aside>
   <main>
+    <details style="margin-bottom:12px"><summary><b>Fehlersuche: Suchseite analysieren</b></summary>
+      <p class="hint">Öffnet die Salesforce-Suche für einen Begriff und beschreibt die Seite (Spalten, Filter). Den Text unten kannst du kopieren und weitergeben.</p>
+      <input type="search" id="diag-term" placeholder="Suchbegriff, z. B. Stuttgart" style="max-width:320px">
+      <button id="diag-run">Analysieren</button>
+      <pre id="diag-out" class="sf-log" style="user-select:all"></pre>
+    </details>
     <div id="status-msg" hidden></div>
     <div id="results"></div>
   </main>
@@ -51,6 +57,22 @@
       : `<div class="sf-empty"><h3>Firmen eintragen</h3><p>Links die Firmennamen einfügen, eine pro Zeile, und auf <b>Mit Salesforce abgleichen</b> klicken.</p></div>`;
   }
   render();
+  $("#diag-run").onclick = async () => {
+    const term = $("#diag-term").value.trim();
+    if (!term) return;
+    const out = $("#diag-out");
+    out.textContent = "Läuft …";
+    try {
+      await sfcCall("/diagnose?term=" + encodeURIComponent(term), "POST");
+      for (;;) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const s = await sfcCall("/status");
+        if (s.state === "running") { out.textContent = (s.log || []).join("\n") || "Läuft …"; continue; }
+        out.textContent = s.state === "error" ? "Fehler: " + s.message : s.state === "need_login" ? "Bitte zuerst einloggen." : JSON.stringify(await sfcCall("/diag"), null, 1);
+        return;
+      }
+    } catch (e) { out.textContent = "Nicht möglich: " + e.message; }
+  };
 </script>
 </body>
 </html>

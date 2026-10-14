@@ -3,8 +3,11 @@
 Für jede Firma wird in der Account-Liste gesucht (wie ein Mensch im Suchfeld). Bei einem Treffer wird die
 Detailseite geöffnet und Inhaber und letzte Aktivität gelesen. Nur lesen, es wird nichts verändert.
 """
+import base64
+import json
 import re
 from datetime import date, datetime, timedelta
+from urllib.parse import quote
 
 import sf
 
@@ -14,24 +17,85 @@ LEGAL = {
 }
 SEARCH_PLACEHOLDER = re.compile(r"durchsuchen|search this list", re.I)
 
-ROWS_JS = """() => [...document.querySelectorAll("table[role='grid'] tbody tr")].map((tr) => {
-  const o = {};
-  tr.querySelectorAll('[data-label]').forEach((c) => { o[c.getAttribute('data-label')] = c.innerText.trim(); });
-  const a = tr.querySelector("a[href*='/lightning/r/']");
-  o.__href = a ? a.getAttribute('href') : '';
-  o.__text = tr.innerText.trim();
-  return o;
-})"""
+ROWS_JS = sf.DEEP_ROWS_JS
 
-DETAIL_JS = """() => {
+DETAIL_JS = "() => {" + sf.DEEP + """
   const out = {};
-  document.querySelectorAll('records-record-layout-item, lightning-output-field').forEach((el) => {
-    const l = el.querySelector('.test-id__field-label, .slds-form-element__label');
-    const v = el.querySelector('.test-id__field-value, .slds-form-element__control');
+  deepAll('records-record-layout-item, lightning-output-field').forEach((el) => {
+    const l = deepAll('.test-id__field-label, .slds-form-element__label', el)[0];
+    const v = deepAll('.test-id__field-value, .slds-form-element__control', el)[0];
     if (l && v) out[l.innerText.trim()] = v.innerText.trim();
   });
   return out;
 }"""
+
+APP_NAME = "LKM_AnwendungVertrieb"
+
+DESCRIBE_JS = "() => {" + sf.DEEP + """
+  const txt = (e) => (e.innerText || e.getAttribute('aria-label') || e.title || '').trim();
+  const out = { url: location.href.split('#')[0], title: document.title };
+  out.hinweise = deepAll('*').filter((e) => !e.children.length && !/^(SCRIPT|STYLE)$/.test(e.tagName) && /Ergebnis/i.test(e.innerText || '')).map((e) => e.innerText.trim()).slice(0, 5);
+  out.tabellen = deepAll("table, [role='grid']").map((t) => ({
+    tag: t.tagName.toLowerCase(), role: t.getAttribute('role'),
+    kopf: deepAll('thead th', t).map((h) => (h.getAttribute('title') || h.innerText || '').trim()).filter(Boolean).slice(0, 25),
+    zeilen: deepAll('tbody tr', t).length,
+  }));
+  out.ersteZeilen = deepAll("table[role='grid'] tbody tr").slice(0, 3).map((tr) =>
+    deepAll('[data-label]', tr).map((c) => [c.getAttribute('data-label'), cellVal(c)]));
+  out.filter = deepAll('select, input, textarea, button[role=combobox], lightning-combobox').map((e) => ({
+    tag: e.tagName.toLowerCase(), typ: e.type || '',
+    label: (e.labels && e.labels[0] ? e.labels[0].innerText : '') || e.getAttribute('aria-label') || e.getAttribute('placeholder') || e.getAttribute('name') || '',
+    wert: e.type === 'checkbox' ? !!e.checked : (e.value || ''),
+    optionen: e.tagName === 'SELECT' ? [...e.options].map((o) => o.text) : undefined,
+  })).slice(0, 40);
+  out.knoepfe = deepAll('button, a').map(txt).filter((t) => /anwenden|standard|filter|alle anzeigen|zurücksetzen|accounts/i.test(t)).slice(0, 20);
+  return out;
+}"""
+
+
+def search_url(term):
+    """Adresse der Salesforce-Suche (Account-Trefferseite) für einen Suchbegriff."""
+    payload = {
+        "componentDef": "forceSearch:searchPageDesktop",
+        "attributes": {
+            "term": term, "scopeMap": {"type": "TOP_RESULTS"},
+            "context": {"FILTERS": {}, "searchSource": "ASSISTANT_DIALOG", "disableIntentQuery": False,
+                        "disableSpellCorrection": False,
+                        "debugInfo": {"appName": APP_NAME, "appType": "Standard", "appNamespace": "c",
+                                      "location": "force:objectHomeDesktop", "sobjectType": "Account"}},
+            "groupId": "DEFAULT",
+        },
+        "state": {},
+    }
+    raw = base64.b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
+    return f"{sf.sf_url()}/one/one.app#{quote(raw, safe='')}"
+
+
+def diagnose_search(term, headed=False, log=print):
+    """Öffnet die Suche und beschreibt die Seite (Tabelle, Spalten, Filter). Nur lesen, zur Fehlersuche."""
+    if not sf.STATE.exists():
+        raise sf.NeedLogin("Noch nicht eingeloggt.")
+    with sf.sync_playwright() as p:
+        browser, ctx = sf._session(p, headed)
+        try:
+            page = ctx.new_page()
+            url = search_url(term)
+            log(f"Öffne Suche nach „{term}“ ...")
+            page.goto(url)
+            page.wait_for_timeout(7000)
+            sf.skip_passkey_prompt(page, url, log)
+            try:
+                page.wait_for_selector("table[role='grid'] tbody tr", timeout=15_000)
+            except Exception:
+                log("  Keine Tabelle gefunden (siehe Bericht).")
+            sf.SHOTS.mkdir(exist_ok=True)
+            shot = sf.SHOTS / "suche.png"
+            page.screenshot(path=str(shot), full_page=True)
+            report = page.evaluate(DESCRIBE_JS)
+            report["screenshot"] = str(shot)
+            return report
+        finally:
+            browser.close()
 
 
 def tokens(name):

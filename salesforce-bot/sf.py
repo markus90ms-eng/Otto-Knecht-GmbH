@@ -126,6 +126,30 @@ def filter_rows(rows, plz_label, act_label, cutoff, prefixes=BW_PREFIXES):
     return result
 
 
+DEEP = """const deepAll = (sel, root = document) => {
+  const out = [];
+  const walk = (r) => { r.querySelectorAll(sel).forEach((e) => out.push(e)); r.querySelectorAll('*').forEach((e) => { if (e.shadowRoot) walk(e.shadowRoot); }); };
+  walk(root);
+  return out;
+};
+const cellVal = (c) => {
+  const cb = c.querySelector("input[type='checkbox']");
+  if (cb) return cb.checked ? 'ja' : 'nein';
+  if (c.querySelector("lightning-icon[icon-name*='check'], svg use[href*='check']")) return 'ja';
+  return c.innerText.trim();
+};"""
+DEEP_ROWS_JS = "() => {" + DEEP + """
+  return deepAll("table[role='grid'] tbody tr").map((tr) => {
+    const o = {};
+    deepAll('[data-label]', tr).forEach((c) => { o[c.getAttribute('data-label')] = cellVal(c); });
+    const a = deepAll("a[href*='/lightning/r/']", tr)[0];
+    o.__href = a ? a.getAttribute('href') : '';
+    o.__text = tr.innerText.trim();
+    return o;
+  });
+}"""
+
+
 def skip_passkey_prompt(page, list_url, log):
     """Salesforce zeigt manchmal eine Passkey-Einrichtung statt der Seite. Wenn möglich überspringen."""
     if "passkey" not in page.url.lower() and "webauthn" not in page.url.lower():
@@ -159,11 +183,7 @@ def read_all_rows(page):
             break
         last = rows.count()
     # alle Zeilen in einem Rutsch aus dem Browser holen (viel schneller als einzeln)
-    return page.evaluate("""() => [...document.querySelectorAll("table[role='grid'] tbody tr")].map((tr) => {
-        const o = {};
-        tr.querySelectorAll('[data-label]').forEach((c) => { o[c.getAttribute('data-label')] = c.innerText.trim(); });
-        return o;
-    })""")
+    return page.evaluate(DEEP_ROWS_JS)
 
 
 def api_base():

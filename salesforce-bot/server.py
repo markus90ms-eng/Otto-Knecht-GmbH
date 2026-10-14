@@ -30,6 +30,7 @@ ALLOWED_ORIGINS = {
 LATEST = sf.OUT / "salesforce_latest.json"
 CHECKS = sf.OUT / "checks.json"
 checks = {}
+diag = {}
 
 job = {"state": "idle", "kind": "", "log": [], "message": "", "updated": ""}
 result = {"rows": [], "source": "", "has_bookings": False, "updated": ""}
@@ -52,7 +53,11 @@ def save_check(lead_id, res):
 
 def run_job(kind, days, headed, liste, leads=None):
     try:
-        if kind == "check":
+        if kind == "diagnose":
+            diag.clear()
+            diag.update(check.diagnose_search(leads[0]["name"], headed, log))
+            job.update(state="done", message="Seitenanalyse fertig.")
+        elif kind == "check":
             check.check_leads(leads, liste, headed, log, save_check)
             job.update(state="done", message=f"{len(leads)} Firmen mit Salesforce abgeglichen.")
         elif kind == "login":
@@ -129,13 +134,15 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, result)
         if path == "/checks":
             return self._send(200, checks)
+        if path == "/diag":
+            return self._send(200, diag)
         self._send(404, {"error": "unbekannt"})
 
     def do_POST(self):
         if not self._origin_ok():
             return self._send(403, {"error": "Origin nicht erlaubt"})
         url = urlparse(self.path)
-        if url.path not in ("/run", "/login", "/check"):
+        if url.path not in ("/run", "/login", "/check", "/diagnose"):
             return self._send(404, {"error": "unbekannt"})
         leads = None
         if url.path == "/check":
@@ -151,10 +158,15 @@ class Handler(BaseHTTPRequestHandler):
             if not leads:
                 return self._send(400, {"error": "keine Firmen übergeben"})
         q = parse_qs(url.query)
+        if url.path == "/diagnose":
+            term = q.get("term", [""])[0].strip()[:100]
+            if not term:
+                return self._send(400, {"error": "kein Suchbegriff"})
+            leads = [{"id": "diag", "name": term}]
         with lock:
             if job["state"] == "running":
                 return self._send(409, {"error": "läuft bereits"})
-            kind = {"/login": "login", "/check": "check"}.get(url.path, "liste")
+            kind = {"/login": "login", "/check": "check", "/diagnose": "diagnose"}.get(url.path, "liste")
             days = max(1, min(int(q.get("days", ["90"])[0]), 3650))
             headed = q.get("headed", ["0"])[0] == "1"
             liste = q.get("liste", [""])[0].strip()
