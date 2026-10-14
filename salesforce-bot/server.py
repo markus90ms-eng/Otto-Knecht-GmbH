@@ -16,7 +16,7 @@ import check
 import sf
 
 PORT = 8766
-VERSION = "2026-10-14-12 (Suche über Salesforce-Trefferseite)"
+VERSION = "2026-10-14-13 (Suche über Salesforce-Trefferseite, Reiter Details)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"

@@ -42,6 +42,10 @@ DETAIL_JS = "() => {" + sf.DEEP + """
     const v = deepAll('.test-id__field-value, .slds-form-element__control', el)[0];
     if (l && v) out[l.innerText.trim()] = v.innerText.trim();
   });
+  deepAll('records-highlights-details-item').forEach((el) => {
+    const parts = (el.innerText || '').split('\\n').map((x) => x.trim()).filter(Boolean);
+    if (parts.length > 1 && !(parts[0] in out)) out[parts[0]] = parts.slice(1).join(' ');
+  });
   return out;
 }"""
 
@@ -216,33 +220,40 @@ def find_date(text):
 def read_detail(ctx, url, log):
     """Öffnet die Account-Seite und liest Inhaber, letzte Aktivität und 'Zuletzt geändert'. Best effort."""
     page = ctx.new_page()
+    fields = {}
+
+    def grab():
+        try:
+            page.wait_for_selector("records-record-layout-item, records-highlights-details-item", timeout=10_000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1200)
+        fields.update(page.evaluate(DETAIL_JS))
+
     try:
         page.goto(url)
-        fields = {}
-        for attempt in range(2):
-            try:
-                page.wait_for_selector("records-record-layout-item", timeout=15_000)
-            except Exception:
-                pass
-            page.wait_for_timeout(1500)
-            fields = page.evaluate(DETAIL_JS)
-            if fields or attempt:
-                break
-            try:  # evtl. steht die Seite auf dem Reiter 'Verwandt': zu 'Details' wechseln
-                page.get_by_role("tab", name=re.compile(r"^Details$", re.I)).first.click(timeout=3000)
-            except Exception:
-                pass
+        grab()
+        try:  # Reiter 'Details' öffnen: dort stehen 'Zuletzt geändert' und Co.
+            page.get_by_role("tab", name=re.compile(r"^Details$", re.I)).first.click(timeout=4000)
+            grab()
+        except Exception:
+            pass
+        try:  # nach unten scrollen, falls Abschnitte erst beim Scrollen geladen werden
+            page.keyboard.press("End")
+            grab()
+        except Exception:
+            pass
     finally:
         page.close()
     pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
-    act_raw, mod_raw = pick(r"letzte aktivit|last activity"), pick(r"zuletzt ge(ä|ae)ndert|last modified")
+    act_raw, mod_raw = pick(r"letzte aktivit|aktivitätsdatum|last activity"), pick(r"zuletzt ge(ä|ae)ndert|last modified")
     return {
         "owner": pick(r"inhaber|owner"),
         "last_activity": find_date(act_raw) if act_raw else "",
         "last_activity_raw": act_raw[:60],
         "last_modified": find_date(mod_raw),
         "last_modified_raw": mod_raw.replace("\n", " ")[:80],
-        "felder": sorted(fields)[:40],
+        "felder": sorted(fields)[:60],
     }
 
 
