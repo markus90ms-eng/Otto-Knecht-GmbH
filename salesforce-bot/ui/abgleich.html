@@ -29,12 +29,13 @@
     </section>
   </aside>
   <main>
-    <details style="margin-bottom:12px"><summary><b>Fehlersuche: Suchseite analysieren</b></summary>
+    <details open style="margin-bottom:12px"><summary><b>Fehlersuche: Suchseite analysieren</b></summary>
       <p class="hint">Öffnet die Salesforce-Suche für einen Begriff und beschreibt die Seite (Spalten, Filter). Den Text unten kannst du kopieren und weitergeben.</p>
       <input type="search" id="diag-term" placeholder="Suchbegriff, z. B. Stuttgart" style="max-width:320px">
       <button id="diag-run">Analysieren</button>
       <pre id="diag-out" class="sf-log" style="user-select:all"></pre>
     </details>
+    <div class="sf-warn">Vorläufig: Das Ergebnis „Nicht in Salesforce“ ist noch <b>nicht verlässlich</b>. Bitte keinen Betrieb allein danach anrufen, bis der Abgleich fertig angepasst ist.</div>
     <div id="status-msg" hidden></div>
     <div id="results"></div>
   </main>
