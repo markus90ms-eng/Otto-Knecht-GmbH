@@ -289,6 +289,10 @@ def read_detail(ctx, url, log):
             grab()
         except Exception:
             pass
+        try:
+            timeline["tabs"] = [t.strip() for t in page.get_by_role("tab").all_inner_texts() if t.strip()][:12]
+        except Exception:
+            pass
         try:  # Reiter 'Aktivität': Verlauf mit Datum der vergangenen Aufgaben, Anrufe und Termine
             page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first.click(timeout=4000)
             page.wait_for_timeout(3500)
