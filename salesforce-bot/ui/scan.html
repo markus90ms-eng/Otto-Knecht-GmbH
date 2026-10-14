@@ -18,6 +18,8 @@
       <textarea id="sc-prefixes" rows="4"></textarea>
       <label for="sc-city">Stadt (empfohlen, z. B. Stuttgart)</label>
       <input type="search" id="sc-city" placeholder="leer = alle Städte">
+      <label for="sc-statusmode">Firmenstatus in Schritt 1</label>
+      <select id="sc-statusmode"><option value="alle" selected>alle Status durchsuchen (empfohlen)</option><option value="vorgabe">nur Voreinstellung (Potenzial)</option></select>
       <p class="hint">Mit Stadt kommen keine Auslandsadressen mit ähnlicher PLZ (z. B. Zypern 7040). Standard-PLZ: 700–799 und 880–899. Zu große Bereiche verfeinert der Bot automatisch. Nur 5-stellige PLZ werden übernommen.</p>
       <button class="primary" id="sc-list">1. Accounts auflisten</button>
     </section>
@@ -103,7 +105,7 @@
       return;
     }
   }
-  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean), city: $("#sc-city").value.trim() });
+  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean), city: $("#sc-city").value.trim(), status_mode: $("#sc-statusmode").value });
   $("#sc-det").onclick = () => start("/scan/details", { max: +$("#sc-max").value || 500, status: $("#sc-status").value.trim() });
   $("#sc-stop").onclick = async () => { try { await sfcCall("/stop", "POST"); $("#sc-info").textContent = "Stopp angefordert, der Bot speichert und beendet gleich."; } catch (e) { $("#sc-info").textContent = e.message; } };
   $("#sc-csv").onclick = () => {
