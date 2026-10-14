@@ -526,7 +526,16 @@ def check_one(page, lead, log):
         status, note = "unklar", f"Ähnlicher Account „{best['name']}“ mit gleicher PLZ. Prüfen! " + best["note"]
     elif len(out) > 1 and any(m["status"] == "vergeben" for m in out[1:]) and status != "vergeben":
         note += " Achtung: weiterer ähnlicher Account ist gesperrt/Kunde."
-    return {"status": status, "note": note, "matches": out, "checked": datetime.now().isoformat(timespec="seconds")}
+    # Regel: gesperrt ist nur, was Kontaktsperre/Sperre-Status hat. Alles andere (egal welcher Firmenstatus) ist frei,
+    # wenn der letzte Kontakt länger als 3 Monate zurückliegt.
+    frei = None
+    if best["art"] != "aehnlich":
+        if status == "vergeben":
+            frei = False
+        elif best.get("tage_seit_kontakt") is not None:
+            frei = best["tage_seit_kontakt"] > 90
+            note += " · FREI (seit über 3 Monaten kein Kontakt)" if frei else " · Kontakt in den letzten 3 Monaten"
+    return {"status": status, "note": note, "matches": out, "frei": frei, "checked": datetime.now().isoformat(timespec="seconds")}
 
 
 def check_leads(leads, liste="", headed=False, log=print, on_result=lambda i, r: None, months=3):

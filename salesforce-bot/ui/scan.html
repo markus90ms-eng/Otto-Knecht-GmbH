@@ -76,8 +76,9 @@
     $("#sc-warn").innerHTML = (sc.capped && sc.capped.length ? `<div class="sf-warn">Bei diesen PLZ gibt es evtl. <b>mehr Accounts als sichtbar</b> (Grenze der Trefferseite, meist 50): ${esc(sc.capped.slice(0, 40).join(", "))}${sc.capped.length > 40 ? " …" : ""}</div>` : "") + (sc.failed && sc.failed.length ? `<div class="sf-warn">Nicht lesbar (bitte nochmal auflisten): ${esc(sc.failed.slice(0, 40).join(", "))}</div>` : "");
     $("#summary").innerHTML = `<b>${rows.length}</b> Treffer · ${sc.rows.length} Accounts aufgelistet · ${sc.rows.filter((r) => r.gelesen).length} Kontaktdaten gelesen` + (sc.rows.length && !anyRead ? " · <i>Kontaktdaten noch nicht gelesen: alle aufgelisteten Accounts werden gezeigt</i>" : "");
     if (!sc.rows.length) { $("#results").innerHTML = `<div class="sf-empty"><h3>Noch nichts gescannt</h3><p>Links auf <b>1. Accounts auflisten</b> klicken. Danach <b>2. Kontaktdaten lesen</b>.</p></div>`; return; }
-    $("#results").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ / Ort</th><th>Firmenstatus</th><th>Letzter Kontakt</th><th>Inhaber</th><th></th></tr></thead><tbody>${
+    $("#results").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ / Ort</th><th>Firmenstatus</th><th>Frei?</th><th>Letzter Kontakt</th><th>Inhaber</th><th></th></tr></thead><tbody>${
       rows.slice(0, sc.limit).map((r) => `<tr><td class="name">${esc(r.name)}</td><td>${esc(r.plz)} ${esc(r.ort)}<div class="sub">${esc(r.strasse)}</div></td><td>${esc(r.status)}${r.sperre ? " · <b>Kontaktsperre</b>" : ""}</td>
+        <td>${r.sperre || r.sperre_status ? "gesperrt" : !r.gelesen ? "" : r.letzter_kontakt ? (r.letzter_kontakt < monthsAgo(3) ? '<b style="color:var(--good)">✓ frei</b>' : "Kontakt &lt; 3 Monate") : '<span class="sub">Datum fehlt</span>'}</td>
         <td>${r.letzter_kontakt ? "<b>" + esc(fmtDate(r.letzter_kontakt)) + "</b>" + (r.letzter_kontakt < monthsAgo(3) ? " ⏳" : "") + `<div class="sub">${esc(r.quelle)}</div>` : r.gelesen ? `<span class="sub">kein Datum gefunden${r.fehler ? ": " + esc(r.fehler) : ""}</span>` : '<span class="sub">noch nicht gelesen</span>'}</td>
         <td>${esc(r.owner)}</td><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">öffnen</a>` : ""}</td></tr>`).join("")}</tbody></table></div>${rows.length > sc.limit ? `<p><button id="sc-more">Weitere 300 anzeigen (${rows.length - sc.limit} übrig)</button></p>` : ""}`;
     const more = $("#sc-more"); if (more) more.onclick = () => { sc.limit += 300; render(); };
@@ -112,7 +113,8 @@
     const rows = sc.visible || [];
     if (!rows.length) return message("Keine Daten zum Exportieren.");
     const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
-    const cols = [["Firma", "name"], ["PLZ", "plz"], ["Ort", "ort"], ["Straße", "strasse"], ["Firmenstatus", "status"], ["Letzter Kontakt", "letzter_kontakt"], ["Quelle", "quelle"], ["Inhaber", "owner"], ["VIS ID", "vis"], ["Link", "url"]];
+    rows.forEach((r) => { r.frei = r.sperre || r.sperre_status ? "gesperrt" : !r.gelesen ? "" : r.letzter_kontakt ? (r.letzter_kontakt < monthsAgo(3) ? "ja" : "nein") : "Datum fehlt"; });
+    const cols = [["Firma", "name"], ["PLZ", "plz"], ["Ort", "ort"], ["Straße", "strasse"], ["Firmenstatus", "status"], ["Frei", "frei"], ["Letzter Kontakt", "letzter_kontakt"], ["Quelle", "quelle"], ["Inhaber", "owner"], ["VIS ID", "vis"], ["Link", "url"]];
     download(`salesforce_scan_${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + [cols.map(([h]) => q(h)).join(";"), ...rows.map((r) => cols.map(([, k]) => q(r[k])).join(";"))].join("\r\n"), "text/csv;charset=utf-8");
   };
   sfcCall("/status").then(async (s) => { $("#ver").textContent = "Programmversion: " + (s.version || "alt"); await loadData(); if (s.state === "running") { sc.running = true; poll(); } }).catch(() => { $("#sc-info").textContent = "Programm nicht erreichbar. Läuft Salesforce_starten.bat?"; });
