@@ -2,3 +2,4 @@
 .env
 screenshots/
 __pycache__/
+output/
