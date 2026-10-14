@@ -52,8 +52,9 @@ def run_job(kind, days, headed):
 
 
 class Handler(BaseHTTPRequestHandler):
-    def log_message(self, *args):
-        pass
+    def log_message(self, fmt, *args):
+        # Jede Anfrage zeigen, damit man sieht, ob die Seite den Server erreicht
+        print(f"[Anfrage] {self.command} {self.path}  (von {self.headers.get('Origin') or 'direkt'})", flush=True)
 
     def _origin_ok(self):
         origin = self.headers.get("Origin")
