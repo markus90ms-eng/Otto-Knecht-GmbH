@@ -43,3 +43,9 @@ Abfrage: erst direkt per SOQL (alle Treffer, ohne 2000er-Grenze), sonst Rückfal
 ## Lokale Seite (ohne GitHub Pages)
 `Salesforce_starten.bat` öffnet jetzt `http://127.0.0.1:8766/` - dieselbe Liste mit allen Filtern, direkt aus dem Programm.
 Die Leadgenerator-Seite im Internet (Tab Salesforce) funktioniert weiterhin, ist aber nicht nötig.
+
+## Abgleich: Gibt es die Firma schon in Salesforce?
+Seite `http://127.0.0.1:8766/abgleich.html` (Tab "Abgleich"): Firmennamen eintragen (eine pro Zeile, optional `; PLZ; Telefon`),
+auf "Mit Salesforce abgleichen" klicken. Der Bot sucht jede Firma im Suchfeld der Account-Liste, liest bei einem Treffer
+Inhaber und letzte Aktivität von der Detailseite. Nur lesend. Ergebnis: frei / Account, lange nicht betreut / Account, aktiv / unklar.
+In der Leadgenerator-Seite gibt es denselben Abgleich über den Knopf "Mit Salesforce abgleichen" in jeder Firmenliste.

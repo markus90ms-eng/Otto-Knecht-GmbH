@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Abgleich mit Salesforce</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Abgleich <span>mit Salesforce</span></h1>
+  <nav id="tabs"><a href="/"><button>Kundenliste</button></a><button class="active">Abgleich</button></nav>
+</header>
+<div class="layout">
+  <aside>
+    <section>
+      <label for="liste">Firmen (eine pro Zeile)</label>
+      <textarea id="liste" rows="12" placeholder="Name; PLZ; Telefon (PLZ und Telefon sind optional)&#10;Italian Food Bros GmbH; 60311; 069 21029842&#10;Müller Bau; 70173"></textarea>
+      <button class="primary" id="sfc-run" style="margin-top:8px">Mit Salesforce abgleichen</button>
+      <label for="sfc-filter">Anzeigen</label>
+      <select id="sfc-filter">
+        <option value="">alle</option>
+        <option value="frei">nur frei (nicht in Salesforce)</option>
+        <option value="ruhend">Account, lange nicht betreut</option>
+        <option value="vergeben">Account, aktiv vergeben</option>
+        <option value="unklar">Account, Details unklar</option>
+      </select>
+      <p class="hint">Voraussetzung: Du bist über die Seite „Kundenliste“ bei Salesforce eingeloggt. Die Prüfung läuft nur lesend und dauert etwa 5 Sekunden pro Firma (höchstens 40 auf einmal).</p>
+    </section>
+  </aside>
+  <main>
+    <div id="status-msg" hidden></div>
+    <div id="results"></div>
+  </main>
+</div>
+<script src="shim.js"></script>
+<script src="sfcheck.js"></script>
+<script>
+  // Eingabe -> Liste der Betriebe (state.visible), Ergebnisse als Tabelle
+  const parse = () => $("#liste").value.split(/\r?\n/).map((z) => z.split(";").map((x) => x.trim())).filter((p) => p[0])
+    .map(([name, plz, phone]) => ({ id: `m:${name}|${plz || ""}`, name, phone: phone || "", address: plz || "" }));
+  state.visible = [];
+  $("#liste").addEventListener("input", () => { state.visible = parse(); render(); });
+  function render() {
+    const rows = state.visible.filter(sfcMatches);
+    $("#results").innerHTML = rows.length
+      ? `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ</th><th>Ergebnis</th><th>Inhaber</th><th>Letzte Aktivität</th></tr></thead><tbody>${rows.map((l) => {
+          const r = sfc.results[l.id], m = r?.matches?.[0];
+          return `<tr><td class="name">${esc(l.name)}</td><td>${esc(l.address)}</td><td>${sfcBadge(l) || '<span class="sub">noch nicht geprüft</span>'}<div class="sub">${esc(r?.note || "")}</div></td><td>${esc(m?.owner || "")}</td><td>${esc(fmtDate(m?.last_activity === "nie" ? "" : m?.last_activity) || (m ? "nie / unbekannt" : ""))}</td></tr>`;
+        }).join("")}</tbody></table></div>`
+      : `<div class="sf-empty"><h3>Firmen eintragen</h3><p>Links die Firmennamen einfügen, eine pro Zeile, und auf <b>Mit Salesforce abgleichen</b> klicken.</p></div>`;
+  }
+  render();
+</script>
+</body>
+</html>
