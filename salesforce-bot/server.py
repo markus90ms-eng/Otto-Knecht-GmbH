@@ -18,7 +18,7 @@ import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-14-26 (Suche über Trefferseite, Reiter Details und Aktivität)"
+VERSION = "2026-10-14-28 (Suche über Trefferseite, Reiter Details und Aktivität)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
@@ -71,7 +71,7 @@ def run_job(kind, days, headed, liste, leads=None):
     keep_awake(True)
     try:
         if kind == "scan_list":
-            n = scan.list_accounts(leads["prefixes"], log, stop_event, leads.get("term") or "{p}*")
+            n = scan.list_accounts(leads["prefixes"], log, stop_event, leads.get("term") or "{p}*", leads.get("city", ""))
             job.update(state="done", message=f"{n} Accounts aufgelistet." + (" (angehalten)" if stop_event.is_set() else ""))
         elif kind == "scan_details":
             n = scan.read_details(leads["max"], leads["status"], log, stop_event)
@@ -184,7 +184,10 @@ class Handler(BaseHTTPRequestHandler):
                     if not prefixes:
                         return self._send(400, {"error": "keine gültigen PLZ-Anfänge"})
                     term = str(body.get("term") or "{p}*")[:40]
-                    leads = {"prefixes": prefixes, "term": term if "{p}" in term else "{p}*"}
+                    city = str(body.get("city") or "").strip()[:60]
+                    if not re.fullmatch(r"[\w .\-/()äöüÄÖÜß]*", city):
+                        return self._send(400, {"error": "ungültiger Stadtname"})
+                    leads = {"prefixes": prefixes, "term": term if "{p}" in term else "{p}*", "city": city}
                 else:
                     status = str(body.get("status") or "")[:80]
                     re.compile(status or ".")

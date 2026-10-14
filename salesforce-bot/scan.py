@@ -87,8 +87,8 @@ def read_rows(page):
 
 def parse_row(r, prefix):
     plz = (r.get("PLZ (Rechnungsanschrift)") or "").strip()
-    if not plz.startswith(prefix):
-        return None  # Treffer außerhalb des PLZ-Bereichs (z. B. Zufallstreffer der Suche)
+    if not re.fullmatch(r"\d{5}", plz) or not plz.startswith(prefix):
+        return None  # nur deutsche 5-stellige PLZ im gewünschten Bereich (4-stellige wie 7040 Zypern fallen raus)
     href = r.get("__href", "")
     return {
         "id": account_id(href), "name": r.get("Accountname", ""), "plz": plz,
@@ -99,7 +99,7 @@ def parse_row(r, prefix):
     }
 
 
-def open_scoped(page, prefix, term_tpl, log):
+def open_scoped(page, prefix, term_tpl, log, city=""):
     """Suche öffnen, zur Account-Trefferseite wechseln, PLZ-Filter setzen. Gibt 'ok' oder 'leer' zurück."""
     term = term_tpl.format(p=prefix)
     url = check.search_url(term)
@@ -117,6 +117,8 @@ def open_scoped(page, prefix, term_tpl, log):
         raise RuntimeError("Wechsel zur Account-Trefferseite nicht möglich (Seite: %s)" % page.url.split("#")[0])
     page.wait_for_timeout(6000)
     set_filter(page, r"^PLZ", prefix)
+    if city:
+        set_filter(page, r"^Stadt", city)
     apply_filters(page, 6000)
     return "ok"
 
@@ -137,9 +139,9 @@ def result_label(page):
         return ""
 
 
-def fetch_prefix(page, prefix, term_tpl, log):
+def fetch_prefix(page, prefix, term_tpl, log, city=""):
     """Gibt (Zeilen, 'ok'|'capped'|'leer') zurück."""
-    if open_scoped(page, prefix, term_tpl, log) == "leer":
+    if open_scoped(page, prefix, term_tpl, log, city) == "leer":
         return [], "leer"
     rows = read_rows(page)
     label = result_label(page)
@@ -153,10 +155,10 @@ NEXT_CHARS = list("abcdefghijklmnopqrstuvwxyzäöüß0123456789 -.&")
 MAX_DEPTH = 4
 
 
-def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop):
+def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city=""):
     """Eine PLZ mit mehr Accounts als sichtbar: zusätzlich nach einem Textfeld (Anfang) aufteilen.
     Gibt (Zeilen, vollständig) zurück oder (None, False), wenn das Feld nicht nach 'beginnt mit' filtert."""
-    if open_scoped(page, plz, term_tpl, log) == "leer":
+    if open_scoped(page, plz, term_tpl, log, city) == "leer":
         return [], True
     found, complete, semantics = {}, True, None
     queue = list(chars)
@@ -194,10 +196,11 @@ def check_no_accounts(page):
         return False
 
 
-def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
+def list_accounts(prefixes, log, stop, term_tpl="{p}*", city=""):
     """Phase 1. prefixes: z. B. ['704', '705']. Speichert nach jedem PLZ-Anfang. Macht nach Abbruch dort weiter."""
     data = load(ACC_FILE, {"accounts": {}, "done": [], "refined": [], "failed": []})
     accounts, done, refined = data["accounts"], set(data["done"]), set(data.get("refined", []))
+    kk = (lambda p: f"{city.lower()}|{p}") if city else (lambda p: p)  # Stadt gehört zum Schlüssel, sonst würden Läufe mit anderer Stadt übersprungen
     queue = list(prefixes)
     ok_count = fail_count = empty_run = 0
     last_error = None
@@ -207,16 +210,16 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
             page = ctx.new_page()
             while queue and not stop.is_set():
                 prefix = queue.pop(0)
-                if prefix in done:
+                if kk(prefix) in done:
                     continue
-                if prefix in refined:  # früher schon verfeinert: direkt die Unterbereiche abarbeiten
+                if kk(prefix) in refined:  # früher schon verfeinert: direkt die Unterbereiche abarbeiten
                     queue = [prefix + str(d) for d in range(10)] + queue
                     continue
                 rows = None
                 state = "ok"
                 for attempt in range(3):
                     try:
-                        rows, state = fetch_prefix(page, prefix, term_tpl, log)
+                        rows, state = fetch_prefix(page, prefix, term_tpl, log, city)
                         break
                     except sf.NeedLogin:
                         raise
@@ -230,7 +233,7 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                         page = ctx.new_page()
                 if rows is None:
                     fail_count += 1
-                    data["failed"] = sorted(set(data.get("failed", [])) | {prefix})
+                    data["failed"] = sorted(set(data.get("failed", [])) | {kk(prefix)})
                     save(ACC_FILE, data)
                     if ok_count == 0 and fail_count >= 3:  # gleich am Anfang nichts geht: nicht die ganze Nacht weiterlaufen
                         raise RuntimeError("Die ersten PLZ-Anfänge ließen sich nicht lesen: " + (str(last_error).strip().splitlines()[0][:200] if last_error else "unbekannt"))
@@ -242,7 +245,7 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                     more, complete = None, False
                     for field_rx, chars, nexts in ((r"^Accountname$", NAME_CHARS, NEXT_CHARS), (r"^VIS ID$", list("0123456789"), list("0123456789"))):
                         try:
-                            more, complete = split_capped(page, prefix, term_tpl, field_rx, chars, nexts, log, stop)
+                            more, complete = split_capped(page, prefix, term_tpl, field_rx, chars, nexts, log, stop, city)
                         except sf.NeedLogin:
                             raise
                         except Exception as e:
@@ -257,20 +260,20 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                         rows = list(by_key.values())
                         log(f"  PLZ {prefix}: nach Aufteilen {len(rows)} Accounts" + ("" if complete else " (evtl. unvollständig)"))
                     if more is None or not complete:
-                        data["capped"] = sorted(set(data.get("capped", [])) | {prefix})
+                        data["capped"] = sorted(set(data.get("capped", [])) | {kk(prefix)})
                         log(f"  ACHTUNG PLZ {prefix}: evtl. gibt es mehr Accounts als gelesen (Grenze der Trefferseite).")
                     at_limit = False
                 if at_limit and len(prefix) < 5:
                     log(f"  {prefix}: {len(rows)} Zeilen (Grenze erreicht), verfeinere ...")
-                    refined.add(prefix)
+                    refined.add(kk(prefix))
                     data["refined"] = sorted(refined)
                     queue = [prefix + str(d) for d in range(10)] + queue
                     continue
                 for r in rows:
                     accounts[r["id"] or r["url"] or r["name"] + r["plz"]] = r
-                done.add(prefix)
+                done.add(kk(prefix))
                 data["done"] = sorted(done)
-                data["failed"] = sorted(set(data.get("failed", [])) - {prefix})
+                data["failed"] = sorted(set(data.get("failed", [])) - {kk(prefix)})
                 save(ACC_FILE, data)
                 empty_run = 0 if rows else empty_run + 1
                 log(f"  PLZ {prefix}: {len(rows)} Accounts (gesamt {len(accounts)}, noch {len(queue)} PLZ-Anfänge)")
@@ -312,10 +315,12 @@ def read_details(max_n, status_rx, log, stop):
                     break
                 key = a["id"] or a["url"]
                 try:
-                    d = check.read_detail(ctx, a["url"], lambda m: None)
-                    res = {**contact_info(d), "owner": d.get("owner", ""), "gelesen": datetime.now().isoformat(timespec="seconds")}
+                    d = check.read_detail(ctx, a["url"], lambda m: None, skip_foreign=True)
+                    res = {**contact_info(d), "owner": d.get("owner", ""), "land_de": d.get("land_de"), "gelesen": datetime.now().isoformat(timespec="seconds")}
                     av = d.get("aktivitaetsverlauf", {})
-                    if not res["letzter_kontakt"]:
+                    if d.get("land_de") is False:
+                        res["hinweis"] = "Ausland: " + (d.get("adresse") or "")[:80]
+                    elif not res["letzter_kontakt"]:
                         res["hinweis"] = av.get("liste") or av.get("fehler") or "kein Datum gefunden"
                 except sf.NeedLogin:
                     raise
@@ -342,6 +347,6 @@ def snapshot():
     rows = []
     for k, a in data["accounts"].items():
         d = det.get(k, {})
-        rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d),
+        rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d), "land_de": d.get("land_de"),
                      "fehler": d.get("fehler", "") or d.get("hinweis", "") if not d.get("letzter_kontakt") else "", "owner": d.get("owner", "")})
     return {"rows": rows, "geprueft_plz": data.get("done", []), "anzahl": len(rows), "gelesen": len(det), "capped": data.get("capped", []), "failed": data.get("failed", [])}

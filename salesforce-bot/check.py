@@ -341,7 +341,11 @@ def read_history_list(ctx, url):
     return (max(dates) if dates else ""), len(rows)
 
 
-def read_detail(ctx, url, log):
+class _Foreign(Exception):
+    """Interner Abbruch: Account liegt nicht in Deutschland (spart das langsame Lesen des Verlaufs)."""
+
+
+def read_detail(ctx, url, log, skip_foreign=False):
     """Öffnet die Account-Seite und liest Inhaber, letzte Aktivität und 'Zuletzt geändert'. Best effort."""
     page = ctx.new_page()
     fields = {}
@@ -361,6 +365,10 @@ def read_detail(ctx, url, log):
     try:
         page.goto(url)
         grab()
+        if skip_foreign:
+            addr = next((v for k, v in fields.items() if re.search(r"rechnungsanschrift|billing address", k, re.I) and v), "")
+            if addr and not re.search(r"deutschland|germany", addr, re.I):
+                raise _Foreign()
         try:  # Reiter 'Details' öffnen: dort stehen 'Zuletzt geändert' und Co.
             page.get_by_role("tab", name=re.compile(r"^Details$", re.I)).first.click(timeout=4000)
             grab()
@@ -404,6 +412,8 @@ def read_detail(ctx, url, log):
                     timeline["liste"] = "Liste nicht lesbar: " + (str(e).strip().splitlines()[0][:100] if str(e).strip() else type(e).__name__)
         except Exception as e:
             timeline["fehler"] = ((timeline.get("fehler", "") + " | ") if timeline.get("fehler") else "") + "Aktivität: " + (str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__)
+    except _Foreign:
+        timeline["ausland"] = True
     finally:
         page.close()
     pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
@@ -412,6 +422,8 @@ def read_detail(ctx, url, log):
     act = max(act_field, timeline.get("datum", ""))  # Feld oder Verlauf: das jüngere Datum gewinnt
     return {
         "owner": pick(r"inhaber|owner"),
+        "adresse": pick(r"rechnungsanschrift|billing address").replace("\n", ", ")[:160],
+        "land_de": (bool(re.search(r"deutschland|germany", pick(r"rechnungsanschrift|billing address"), re.I)) if pick(r"rechnungsanschrift|billing address") else None),
         "last_activity": act,
         "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
         "last_activity_raw": act_raw[:60],

@@ -16,7 +16,9 @@
     <section>
       <label for="sc-prefixes">1. PLZ-Anfänge</label>
       <textarea id="sc-prefixes" rows="4"></textarea>
-      <p class="hint">Standard: ganz Baden-Württemberg (700–799, 880–899). Zu große Bereiche verfeinert der Bot automatisch.</p>
+      <label for="sc-city">Stadt (empfohlen, z. B. Stuttgart)</label>
+      <input type="search" id="sc-city" placeholder="leer = alle Städte">
+      <p class="hint">Mit Stadt kommen keine Auslandsadressen mit ähnlicher PLZ (z. B. Zypern 7040). Standard-PLZ: 700–799 und 880–899. Zu große Bereiche verfeinert der Bot automatisch. Nur 5-stellige PLZ werden übernommen.</p>
       <button class="primary" id="sc-list">1. Accounts auflisten</button>
     </section>
     <section>
@@ -40,6 +42,7 @@
       <select id="sc-age"><option value="0">egal</option><option value="3" selected>3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option></select>
       <label class="check"><input type="checkbox" id="sc-nodate" checked> auch Accounts ohne Kontaktdatum</label>
       <label class="check"><input type="checkbox" id="sc-onlyread" checked> nur Accounts mit gelesenen Kontaktdaten</label>
+      <label class="check"><input type="checkbox" id="sc-de" checked> Auslandsadressen ausblenden (wenn erkannt)</label>
     </section>
   </aside>
   <main>
@@ -63,7 +66,7 @@
     const anyRead = sc.rows.some((r) => r.gelesen);
     const age = anyRead ? +$("#sc-age").value : 0, cut = age ? monthsAgo(age) : "", nodate = $("#sc-nodate").checked, onlyRead = $("#sc-onlyread").checked && anyRead;
     let rows = sc.rows.filter((r) =>
-      (!onlyRead || r.gelesen) &&
+      (!onlyRead || r.gelesen) && !($("#sc-de").checked && r.land_de === false) &&
       (!text.length || text.some((t) => (/^\d+$/.test(t) ? r.plz.startsWith(t) : `${r.ort} ${r.name}`.toLowerCase().includes(t)))) &&
       (!cut || (r.letzter_kontakt ? r.letzter_kontakt < cut : nodate && r.gelesen)));
     rows.sort((a, b) => (a.letzter_kontakt || "0000").localeCompare(b.letzter_kontakt || "0000") || a.plz.localeCompare(b.plz));
@@ -77,7 +80,7 @@
         <td>${esc(r.owner)}</td><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">öffnen</a>` : ""}</td></tr>`).join("")}</tbody></table></div>${rows.length > sc.limit ? `<p><button id="sc-more">Weitere 300 anzeigen (${rows.length - sc.limit} übrig)</button></p>` : ""}`;
     const more = $("#sc-more"); if (more) more.onclick = () => { sc.limit += 300; render(); };
   }
-  for (const id of ["#sc-text", "#sc-age", "#sc-nodate", "#sc-onlyread"]) $(id).addEventListener("input", () => { sc.limit = 300; render(); });
+  for (const id of ["#sc-text", "#sc-age", "#sc-nodate", "#sc-onlyread", "#sc-de"]) $(id).addEventListener("input", () => { sc.limit = 300; render(); });
 
   async function loadData() { try { const d = await sfcCall("/scan"); sc.rows = d.rows; sc.capped = d.capped || []; sc.failed = d.failed || []; sc.lastLoad = Date.now(); render(); } catch (e) { $("#sc-info").textContent = "Programm nicht erreichbar: " + e.message; } }
   async function start(path, body) {
@@ -100,7 +103,7 @@
       return;
     }
   }
-  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean) });
+  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean), city: $("#sc-city").value.trim() });
   $("#sc-det").onclick = () => start("/scan/details", { max: +$("#sc-max").value || 500, status: $("#sc-status").value.trim() });
   $("#sc-stop").onclick = async () => { try { await sfcCall("/stop", "POST"); $("#sc-info").textContent = "Stopp angefordert, der Bot speichert und beendet gleich."; } catch (e) { $("#sc-info").textContent = e.message; } };
   $("#sc-csv").onclick = () => {
