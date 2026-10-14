@@ -122,11 +122,13 @@ def filter_rows(rows, plz_label, act_label, cutoff, prefixes=BW_PREFIXES):
 
 def read_all_rows(page):
     """Alle Zeilen der Listenansicht lesen (scrollt bis nichts mehr nachlädt)."""
-    page.wait_for_selector("table[role='grid'] tbody tr", timeout=30_000)
+    print("Warte auf die Tabelle ...", flush=True)
+    page.wait_for_selector("table[role='grid'] tbody tr", timeout=60_000)
     rows = page.locator("table[role='grid'] tbody tr")
     last = -1
     while rows.count() != last:
         last = rows.count()
+        print(f"  {last} Zeilen geladen ...", flush=True)
         rows.last.scroll_into_view_if_needed()
         page.wait_for_timeout(1500)
     data = []
@@ -141,19 +143,22 @@ def read_all_rows(page):
 def cmd_bw(args):
     """Firmen in Baden-Württemberg (PLZ 7*, 88*, 89*) ohne Aktivität seit N Tagen."""
     cutoff = date.today() - timedelta(days=args.tage)
+    print("Starte Browser ...", flush=True)
     with sync_playwright() as p:
         browser, ctx = _session(p, args.headed)
         page = ctx.new_page()
         try:
+            print(f"Öffne Liste {args.liste} ...", flush=True)
             page.goto(f"{sf_url()}/lightning/o/Account/list?filterName={args.liste}")
+            print(f"Seite: {page.url}", flush=True)
             if "login" in page.url:
                 sys.exit("Sitzung abgelaufen. Bitte neu: python sf.py login")
             rows = read_all_rows(page)
-        except PWTimeout:
+        except Exception as e:
             SHOTS.mkdir(exist_ok=True)
             shot = SHOTS / "fehler.png"
             page.screenshot(path=str(shot), full_page=True)
-            sys.exit(f"Timeout. Screenshot: {shot}")
+            sys.exit(f"Fehler: {type(e).__name__}: {e}\nScreenshot: {shot}")
         finally:
             browser.close()
 
