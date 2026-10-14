@@ -22,3 +22,8 @@ Passwörter werden nie gespeichert, nur die Browser-Sitzung in `.auth/` (git-ign
 In der Salesforce-Listenansicht "Alle Accounts" müssen die Spalten
 "Rechnungsadresse PLZ" und "Letzte Aktivität" eingeblendet sein.
 Ergebnis: Ausgabe im Terminal plus CSV in `output/` (git-ignoriert, enthält Kundendaten).
+
+## Windows: per Doppelklick
+1. `1_einrichten.bat` (einmalig)
+2. `2_einloggen.bat` (bei Bedarf wiederholen, wenn die Sitzung abläuft)
+3. `3_BW_Liste_erstellen.bat`
