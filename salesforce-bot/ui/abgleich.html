@@ -9,7 +9,7 @@
 <body>
 <header>
   <h1>Abgleich <span>mit Salesforce</span></h1>
-  <nav id="tabs"><a href="/"><button>Kundenliste</button></a><button class="active">Abgleich</button></nav>
+  <nav id="tabs"><a href="/"><button>Kundenliste</button></a><button class="active">Abgleich</button><a href="/scan.html"><button>Bestands-Scan</button></a></nav>
 </header>
 <div class="layout">
   <aside>
@@ -39,8 +39,8 @@
   </aside>
   <main>
     <details open style="margin-bottom:12px"><summary><b>Fehlersuche: Suchseite analysieren</b></summary>
-      <p class="hint">Öffnet die Salesforce-Suche für einen Begriff und beschreibt die Seite (Spalten, Filter). Den Text unten kannst du kopieren und weitergeben.</p>
-      <input type="search" id="diag-term" placeholder="Suchbegriff, z. B. Stuttgart" style="max-width:320px">
+      <p class="hint">Öffnet die Salesforce-Suche für einen Begriff, wechselt zu den Accounts, setzt einen PLZ-Filter und beschreibt jede Stufe (Spalten, Filter, Trefferzahl). Den Text unten kannst du kopieren und weitergeben.</p>
+      <input type="search" id="diag-term" placeholder="Suchbegriff; PLZ-Anfang, z. B. stuttgart; 704" style="max-width:420px">
       <button id="diag-run">Analysieren</button>
       <pre id="diag-out" class="sf-log" style="user-select:all"></pre>
     </details>

@@ -63,3 +63,12 @@ Filter in der Seite: letzter Kontakt über 3 / 6 / 12 Monate her, oder Kontaktda
 
 Auf der Account-Seite liest der Bot den Reiter **Aktivität** (Verlauf mit Monatsüberschriften wie "September • 2026" und Einträgen "dd.mm").
 Das neueste vergangene Datum daraus gilt als letzte Aktivität. Ausstehende und überfällige Einträge zählen nicht.
+
+## Bestands-Scan über Nacht (Seite http://127.0.0.1:8766/scan.html)
+1. **Accounts auflisten**: je PLZ-Anfang (Standard 700–799 und 880–899) Account-Trefferseite mit PLZ-Filter lesen. Zu große Bereiche werden
+   automatisch verfeinert (4. und 5. Stelle). Gespeichert in `output/scan_accounts.json`.
+2. **Kontaktdaten lesen**: für Accounts mit passendem Firmenstatus (Standard "Potenzial", nicht gesperrt) die Account-Seite öffnen und den
+   letzten Kontakt lesen (Aktivitätsverlauf, Zuletzt geändert). Gespeichert in `output/scan_details.json`.
+3. Ergebnis filtern (Stadt/PLZ, letzter Kontakt älter als 3/6/12 Monate) und als CSV exportieren.
+Abbruch jederzeit mit "Stopp"; ein neuer Start macht dort weiter. Windows geht während des Laufs nicht in den Standby.
+Für die Nacht: Laptop ans Netz, Deckel offen lassen (oder in den Energieoptionen "Beim Zuklappen: nichts unternehmen"), Browser-Fenster des Bots nicht schließen.

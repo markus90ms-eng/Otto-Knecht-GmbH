@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Bestands-Scan</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>Bestands-Scan <span>Baden-Württemberg</span></h1>
+  <nav id="tabs"><a href="/"><button>Kundenliste</button></a><a href="/abgleich.html"><button>Abgleich</button></a><button class="active">Bestands-Scan</button></nav>
+</header>
+<div class="layout">
+  <aside>
+    <section>
+      <label for="sc-prefixes">1. PLZ-Anfänge</label>
+      <textarea id="sc-prefixes" rows="4"></textarea>
+      <p class="hint">Standard: ganz Baden-Württemberg (700–799, 880–899). Zu große Bereiche verfeinert der Bot automatisch.</p>
+      <button class="primary" id="sc-list">1. Accounts auflisten</button>
+    </section>
+    <section>
+      <label for="sc-status">2. Firmenstatus enthält</label>
+      <input type="search" id="sc-status" value="Potenzial">
+      <label for="sc-max">Höchstens so viele Accounts lesen</label>
+      <input type="search" id="sc-max" value="1500">
+      <p class="hint">Pro Account etwa 10 bis 30 Sekunden. Gesperrte Accounts werden übersprungen.</p>
+      <button class="primary" id="sc-det">2. Kontaktdaten lesen</button>
+      <button id="sc-stop" style="width:100%;margin-top:8px">Stopp (speichert und beendet)</button>
+    </section>
+    <section>
+      <div class="stand" id="sc-info"></div>
+      <pre id="sc-log" class="sf-log" style="max-height:160px"></pre>
+      <p class="hint" id="ver"></p>
+    </section>
+    <section>
+      <label for="sc-text">Ergebnis filtern: Stadt oder PLZ</label>
+      <input type="search" id="sc-text" placeholder="z. B. Stuttgart, 70">
+      <label for="sc-age">Letzter Kontakt älter als</label>
+      <select id="sc-age"><option value="0">egal</option><option value="3" selected>3 Monate</option><option value="6">6 Monate</option><option value="12">12 Monate</option></select>
+      <label class="check"><input type="checkbox" id="sc-nodate" checked> auch Accounts ohne Kontaktdatum</label>
+      <label class="check"><input type="checkbox" id="sc-onlyread" checked> nur Accounts mit gelesenen Kontaktdaten</label>
+    </section>
+  </aside>
+  <main>
+    <div class="toolbar"><div id="summary">Noch keine Daten.</div><div class="actions"><button id="sc-csv">CSV-Export</button></div></div>
+    <div id="status-msg" hidden></div>
+    <div id="results"></div>
+  </main>
+</div>
+<script src="shim.js"></script>
+<script src="sfcheck.js"></script>
+<script>
+  const sc = { rows: [], limit: 300, running: false, lastLoad: 0 };
+  const monthsAgo = (m) => { const d = new Date(); d.setMonth(d.getMonth() - m); return d.toISOString().slice(0, 10); };
+  const defaultPrefixes = () => { const a = []; for (let i = 700; i <= 799; i++) a.push(i); for (let i = 880; i <= 899; i++) a.push(i); return a.join(" "); };
+  $("#sc-prefixes").value = defaultPrefixes();
+
+  function render() {
+    const text = $("#sc-text").value.trim().toLowerCase().split(/[,;]+/).map((t) => t.trim()).filter(Boolean);
+    const age = +$("#sc-age").value, cut = age ? monthsAgo(age) : "", nodate = $("#sc-nodate").checked, onlyRead = $("#sc-onlyread").checked;
+    let rows = sc.rows.filter((r) =>
+      (!onlyRead || r.gelesen) &&
+      (!text.length || text.some((t) => (/^\d+$/.test(t) ? r.plz.startsWith(t) : `${r.ort} ${r.name}`.toLowerCase().includes(t)))) &&
+      (!cut || (r.letzter_kontakt ? r.letzter_kontakt < cut : nodate && r.gelesen)));
+    rows.sort((a, b) => (a.letzter_kontakt || "0000").localeCompare(b.letzter_kontakt || "0000") || a.plz.localeCompare(b.plz));
+    sc.visible = rows;
+    $("#summary").innerHTML = `<b>${rows.length}</b> Treffer · ${sc.rows.length} Accounts aufgelistet · ${sc.rows.filter((r) => r.gelesen).length} Kontaktdaten gelesen`;
+    if (!sc.rows.length) { $("#results").innerHTML = `<div class="sf-empty"><h3>Noch nichts gescannt</h3><p>Links auf <b>1. Accounts auflisten</b> klicken. Danach <b>2. Kontaktdaten lesen</b>.</p></div>`; return; }
+    $("#results").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ / Ort</th><th>Firmenstatus</th><th>Letzter Kontakt</th><th>Inhaber</th><th></th></tr></thead><tbody>${
+      rows.slice(0, sc.limit).map((r) => `<tr><td class="name">${esc(r.name)}</td><td>${esc(r.plz)} ${esc(r.ort)}<div class="sub">${esc(r.strasse)}</div></td><td>${esc(r.status)}${r.sperre ? " · <b>Kontaktsperre</b>" : ""}</td>
+        <td>${r.letzter_kontakt ? "<b>" + esc(fmtDate(r.letzter_kontakt)) + "</b>" + (r.letzter_kontakt < monthsAgo(3) ? " ⏳" : "") + `<div class="sub">${esc(r.quelle)}</div>` : r.gelesen ? `<span class="sub">kein Datum gefunden${r.fehler ? ": " + esc(r.fehler) : ""}</span>` : '<span class="sub">noch nicht gelesen</span>'}</td>
+        <td>${esc(r.owner)}</td><td>${r.url ? `<a href="${esc(r.url)}" target="_blank" rel="noopener">öffnen</a>` : ""}</td></tr>`).join("")}</tbody></table></div>${rows.length > sc.limit ? `<p><button id="sc-more">Weitere 300 anzeigen (${rows.length - sc.limit} übrig)</button></p>` : ""}`;
+    const more = $("#sc-more"); if (more) more.onclick = () => { sc.limit += 300; render(); };
+  }
+  for (const id of ["#sc-text", "#sc-age", "#sc-nodate", "#sc-onlyread"]) $(id).addEventListener("input", () => { sc.limit = 300; render(); });
+
+  async function loadData() { try { const d = await sfcCall("/scan"); sc.rows = d.rows; sc.lastLoad = Date.now(); render(); } catch (e) { $("#sc-info").textContent = "Programm nicht erreichbar: " + e.message; } }
+  async function start(path, body) {
+    try { await sfcCall(path, "POST", body); sc.running = true; poll(); } catch (e) { $("#sc-info").textContent = "Start nicht möglich: " + e.message; }
+  }
+  async function poll() {
+    for (;;) {
+      let s;
+      try { s = await sfcCall("/status"); } catch (e) { $("#sc-info").textContent = "Verbindung zum Programm verloren: " + e.message; sc.running = false; return; }
+      $("#sc-log").textContent = (s.log || []).slice(-12).join("\n");
+      if (s.state === "running") {
+        $("#sc-info").textContent = "Läuft … (Fenster und Browser nicht schließen)";
+        if (Date.now() - sc.lastLoad > 60000) await loadData();
+        await new Promise((r) => setTimeout(r, 5000));
+        continue;
+      }
+      sc.running = false;
+      $("#sc-info").textContent = s.state === "error" ? "Fehler: " + s.message : s.state === "need_login" ? "Bitte zuerst auf „Kundenliste“ bei Salesforce einloggen." : s.message;
+      await loadData();
+      return;
+    }
+  }
+  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean) });
+  $("#sc-det").onclick = () => start("/scan/details", { max: +$("#sc-max").value || 500, status: $("#sc-status").value.trim() });
+  $("#sc-stop").onclick = async () => { try { await sfcCall("/stop", "POST"); $("#sc-info").textContent = "Stopp angefordert, der Bot speichert und beendet gleich."; } catch (e) { $("#sc-info").textContent = e.message; } };
+  $("#sc-csv").onclick = () => {
+    const rows = sc.visible || [];
+    if (!rows.length) return message("Keine Daten zum Exportieren.");
+    const q = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const cols = [["Firma", "name"], ["PLZ", "plz"], ["Ort", "ort"], ["Straße", "strasse"], ["Firmenstatus", "status"], ["Letzter Kontakt", "letzter_kontakt"], ["Quelle", "quelle"], ["Inhaber", "owner"], ["VIS ID", "vis"], ["Link", "url"]];
+    download(`salesforce_scan_${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + [cols.map(([h]) => q(h)).join(";"), ...rows.map((r) => cols.map(([, k]) => q(r[k])).join(";"))].join("\r\n"), "text/csv;charset=utf-8");
+  };
+  sfcCall("/status").then(async (s) => { $("#ver").textContent = "Programmversion: " + (s.version || "alt"); await loadData(); if (s.state === "running") { sc.running = true; poll(); } }).catch(() => { $("#sc-info").textContent = "Programm nicht erreichbar. Läuft Salesforce_starten.bat?"; });
+  render();
+</script>
+</body>
+</html>

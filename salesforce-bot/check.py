@@ -7,7 +7,7 @@ import base64
 import json
 import re
 from datetime import date, datetime
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 import sf
 
@@ -119,10 +119,32 @@ def search_url(term):
     return f"{sf.sf_url()}/one/one.app#{quote(raw, safe='')}"
 
 
+def decode_fragment(url):
+    """Salesforce-Suchadresse (Teil nach '#') -> lesbares JSON. Hilft zu verstehen, wie Filter kodiert werden."""
+    try:
+        frag = unquote(url.split("#", 1)[1])
+        return json.loads(base64.b64decode(frag + "=" * (-len(frag) % 4)))
+    except Exception:
+        return None
+
+
+def _describe(page, label):
+    rep = page.evaluate(DESCRIBE_JS)
+    rep["stufe"] = label
+    rep["adresse_dekodiert"] = decode_fragment(page.url)
+    # Spaltenbreiten-Regler sind Rauschen
+    rep["filter"] = [f for f in rep.get("filter", []) if "Spaltenbreite" not in (f.get("label") or "")]
+    return rep
+
+
 def diagnose_search(term, headed=False, log=print):
-    """Öffnet die Suche und beschreibt die Seite (Tabelle, Spalten, Filter). Nur lesen, zur Fehlersuche."""
+    """Öffnet die Suche, wechselt zur Account-Trefferseite und wendet einen PLZ-Filter an. Beschreibt jede Stufe
+    (Spalten, Filter, Trefferzahl, dekodierte Adresse). Eingabe: 'Suchbegriff; PLZ-Anfang'. Nur lesen."""
     if not sf.STATE.exists():
         raise sf.NeedLogin("Noch nicht eingeloggt.")
+    term, _, plz = (x.strip() for x in term.partition(";"))
+    plz = plz or (re.sub(r"\D", "", term) or "704")
+    out = {}
     with sf.sync_playwright() as p:
         browser, ctx = sf._session(p, headed)
         try:
@@ -132,16 +154,29 @@ def diagnose_search(term, headed=False, log=print):
             page.goto(url)
             page.wait_for_timeout(7000)
             sf.skip_passkey_prompt(page, url, log)
-            try:
-                page.wait_for_selector("table[role='grid'] tbody tr", timeout=15_000)
-            except Exception:
-                log("  Keine Tabelle gefunden (siehe Bericht).")
             sf.SHOTS.mkdir(exist_ok=True)
-            shot = sf.SHOTS / "suche.png"
-            page.screenshot(path=str(shot), full_page=True)
-            report = page.evaluate(DESCRIBE_JS)
-            report["screenshot"] = str(shot)
-            return report
+            out["1_beste_ergebnisse"] = _describe(page, "Beste Ergebnisse")
+            page.screenshot(path=str(sf.SHOTS / "suche.png"), full_page=True)
+            log("Wechsle zur Account-Trefferseite ...")
+            try:
+                page.get_by_role("link", name=re.compile(r"Mehr anzeigen.*Accounts", re.I | re.S)).first.click(timeout=8000)
+                page.wait_for_timeout(7000)
+                out["2_account_seite"] = _describe(page, "Account-Trefferseite")
+                page.screenshot(path=str(sf.SHOTS / "suche_accounts.png"), full_page=True)
+            except Exception as e:
+                out["2_account_seite"] = {"fehler": "Wechsel nicht möglich: " + str(e).strip().splitlines()[0][:150]}
+                return out
+            log(f"Setze PLZ-Filter {plz} ...")
+            try:
+                box = page.get_by_label(re.compile(r"^PLZ", re.I)).first
+                box.fill(plz, timeout=6000)
+                page.get_by_role("button", name=re.compile(r"Anwenden", re.I)).first.click(timeout=6000)
+                page.wait_for_timeout(7000)
+                out["3_mit_plz_filter"] = _describe(page, f"PLZ-Filter {plz}")
+                page.screenshot(path=str(sf.SHOTS / "suche_plz.png"), full_page=True)
+            except Exception as e:
+                out["3_mit_plz_filter"] = {"fehler": "Filter nicht bedienbar: " + str(e).strip().splitlines()[0][:150]}
+            return out
         finally:
             browser.close()
 

@@ -4,6 +4,7 @@ Läuft nur auf deinem Rechner (127.0.0.1). Die Salesforce-Daten verlassen den Re
 sie gehen nur an deinen Browser. Nur die erlaubten Seiten dürfen zugreifen.
 """
 import json
+import os
 import re
 import sys
 import threading
@@ -13,10 +14,11 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
 import check
+import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-14-20 (Suche über Trefferseite, Reiter Details und Aktivität)"
+VERSION = "2026-10-14-23 (Suche über Trefferseite, Reiter Details und Aktivität)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
@@ -32,6 +34,7 @@ LATEST = sf.OUT / "salesforce_latest.json"
 CHECKS = sf.OUT / "checks.json"
 checks = {}
 diag = {}
+stop_event = threading.Event()
 
 job = {"state": "idle", "kind": "", "log": [], "message": "", "updated": ""}
 result = {"rows": [], "source": "", "has_bookings": False, "updated": ""}
@@ -41,6 +44,8 @@ lock = threading.Lock()
 def log(text):
     print(text, flush=True)
     job["log"].append(text)
+    if len(job["log"]) > 300:  # lange Nachtläufe: Protokoll klein halten
+        del job["log"][:100]
 
 
 def save_check(lead_id, res):
@@ -52,9 +57,26 @@ def save_check(lead_id, res):
         pass
 
 
+def keep_awake(on):
+    """Windows: Standby verhindern, solange ein Lauf aktiv ist (ohne Admin-Rechte)."""
+    if os.name == "nt":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000001 if on else 0x80000000)
+        except Exception:
+            pass
+
+
 def run_job(kind, days, headed, liste, leads=None):
+    keep_awake(True)
     try:
-        if kind == "diagnose":
+        if kind == "scan_list":
+            n = scan.list_accounts(leads["prefixes"], log, stop_event, leads.get("term") or "{p}*")
+            job.update(state="done", message=f"{n} Accounts aufgelistet." + (" (angehalten)" if stop_event.is_set() else ""))
+        elif kind == "scan_details":
+            n = scan.read_details(leads["max"], leads["status"], log, stop_event)
+            job.update(state="done", message=f"Kontaktdaten für {n} Accounts gelesen." + (" (angehalten)" if stop_event.is_set() else ""))
+        elif kind == "diagnose":
             diag.clear()
             diag.update(check.diagnose_search(leads[0]["name"], headed, log))
             job.update(state="done", message="Seitenanalyse fertig.")
@@ -76,6 +98,8 @@ def run_job(kind, days, headed, liste, leads=None):
     except Exception as e:
         job.update(state="error", message=f"{type(e).__name__}: {e}")
         log(job["message"])
+    finally:
+        keep_awake(False)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -124,7 +148,7 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path in ("/", "/index.html"):
             return self._send_file("index.html")
-        if path.lstrip("/") in ("salesforce.js", "shim.js", "style.css", "sfcheck.js", "abgleich.html"):
+        if path.lstrip("/") in ("salesforce.js", "shim.js", "style.css", "sfcheck.js", "abgleich.html", "scan.html"):
             return self._send_file(path.lstrip("/"))
         if path == "/status":
             return self._send(200, {
@@ -137,15 +161,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, checks)
         if path == "/diag":
             return self._send(200, diag)
+        if path == "/scan":
+            return self._send(200, scan.snapshot())
         self._send(404, {"error": "unbekannt"})
 
     def do_POST(self):
         if not self._origin_ok():
             return self._send(403, {"error": "Origin nicht erlaubt"})
         url = urlparse(self.path)
-        if url.path not in ("/run", "/login", "/check", "/diagnose"):
+        if url.path not in ("/run", "/login", "/check", "/diagnose", "/scan/list", "/scan/details", "/stop"):
             return self._send(404, {"error": "unbekannt"})
         leads = None
+        if url.path == "/stop":
+            stop_event.set()
+            return self._send(200, {"stop": True})
+        if url.path in ("/scan/list", "/scan/details"):
+            try:
+                length = min(int(self.headers.get("Content-Length", 0)), 100_000)
+                body = json.loads(self.rfile.read(length) or b"{}")
+                if url.path == "/scan/list":
+                    prefixes = [str(x).strip() for x in body.get("prefixes", []) if re.fullmatch(r"\d{1,5}", str(x).strip())][:500]
+                    if not prefixes:
+                        return self._send(400, {"error": "keine gültigen PLZ-Anfänge"})
+                    term = str(body.get("term") or "{p}*")[:40]
+                    leads = {"prefixes": prefixes, "term": term if "{p}" in term else "{p}*"}
+                else:
+                    status = str(body.get("status") or "")[:80]
+                    re.compile(status or ".")
+                    leads = {"max": max(1, min(int(body.get("max", 500)), 50_000)), "status": status}
+            except (ValueError, TypeError, re.error):
+                return self._send(400, {"error": "ungültige Eingabe"})
         if url.path == "/check":
             try:
                 length = min(int(self.headers.get("Content-Length", 0)), 1_000_000)
@@ -167,12 +212,13 @@ class Handler(BaseHTTPRequestHandler):
         with lock:
             if job["state"] == "running":
                 return self._send(409, {"error": "läuft bereits"})
-            kind = {"/login": "login", "/check": "check", "/diagnose": "diagnose"}.get(url.path, "liste")
+            kind = {"/login": "login", "/check": "check", "/diagnose": "diagnose", "/scan/list": "scan_list", "/scan/details": "scan_details"}.get(url.path, "liste")
             days = max(1, min(int(q.get("days", ["90"])[0]), 3650))
             headed = q.get("headed", ["0"])[0] == "1"
             liste = q.get("liste", [""])[0].strip()
             if not re.fullmatch(r"[A-Za-z0-9_]{1,40}", liste):
                 liste = "AllAccounts"
+            stop_event.clear()
             job.update(state="running", kind=kind, log=[], message="")
         threading.Thread(target=run_job, args=(kind, days, headed, liste, leads), daemon=True).start()
         self._send(202, {"started": kind})
