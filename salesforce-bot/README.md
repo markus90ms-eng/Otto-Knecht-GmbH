@@ -60,3 +60,6 @@ Zusätzlich wird auf der Account-Seite Inhaber, Letzte Aktivität und Zuletzt ge
 
 **Letzter Kontakt** = jüngeres Datum aus "Letzte Aktivität" und "Zuletzt geändert" (bei uns gilt beides als Kontakt).
 Filter in der Seite: letzter Kontakt über 3 / 6 / 12 Monate her, oder Kontaktdatum nicht lesbar.
+
+Auf der Account-Seite liest der Bot den Reiter **Aktivität** (Verlauf mit Monatsüberschriften wie "September • 2026" und Einträgen "dd.mm").
+Das neueste vergangene Datum daraus gilt als letzte Aktivität. Ausstehende und überfällige Einträge zählen nicht.

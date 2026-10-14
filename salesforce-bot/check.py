@@ -6,7 +6,7 @@ Firmenstatus, Kundenkontaktsperre, Account-Sperre, VIS ID, Debitoren-Nr. Nur les
 import base64
 import json
 import re
-from datetime import datetime
+from datetime import date, datetime
 from urllib.parse import quote
 
 import sf
@@ -47,6 +47,23 @@ DETAIL_JS = "() => {" + sf.DEEP + """
     if (parts.length > 1 && !(parts[0] in out)) out[parts[0]] = parts.slice(1).join(' ');
   });
   return out;
+}"""
+
+LINES_JS = """() => {
+  const INLINE = /^(SPAN|A|B|I|EM|STRONG|ABBR|SMALL|LABEL|LIGHTNING-FORMATTED-TEXT|LIGHTNING-FORMATTED-DATE-TIME|LIGHTNING-BASE-FORMATTED-TEXT|LIGHTNING-RELATIVE-DATE-TIME|LIGHTNING-FORMATTED-URL)$/;
+  const out = [];
+  const walk = (n) => {
+    if (n.nodeType === 3) { out.push(n.textContent); return; }
+    if (n.nodeType === 11) { n.childNodes.forEach(walk); return; }
+    if (n.nodeType !== 1 || /^(SCRIPT|STYLE)$/.test(n.tagName)) return;
+    if (n.tagName === 'SLOT') { const a = n.assignedNodes({ flatten: true }); (a.length ? a : [...n.childNodes]).forEach(walk); return; }
+    const block = !INLINE.test(n.tagName);
+    if (block) out.push('\\n');
+    if (n.shadowRoot) walk(n.shadowRoot); else n.childNodes.forEach(walk);
+    if (block) out.push('\\n');
+  };
+  walk(document.body);
+  return out.join('').split('\\n').map((x) => x.replace(/\\s+/g, ' ').trim()).filter(Boolean);
 }"""
 
 PAGE_TEXT_JS = """() => {
@@ -208,6 +225,34 @@ def interpret(row):
     return "unklar", "Status nicht eindeutig. " + facts
 
 
+MONTHS = {"januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5, "juni": 6, "juli": 7, "august": 8,
+          "september": 9, "oktober": 10, "november": 11, "dezember": 12}
+MONTH_RX = re.compile(r"^(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s*[•·\-–]\s*(\d{4})", re.I)
+ITEM_RX = re.compile(r"^(?:\d{1,2}:\d{2}\s*\|\s*)?(\d{1,2})\.(\d{1,2})\.?$")
+
+
+def parse_timeline(lines):
+    """Aktivitätsverlauf (Zeilen) -> (neuestes vergangenes Datum als ISO oder '', Anzahl erkannter Einträge).
+    Überschriften wie 'September • 2026' liefern das Jahr, die Einträge 'dd.mm'. 'Ausstehend und überfällig' wird übersprungen."""
+    year = None
+    found = []
+    for ln in lines:
+        m = MONTH_RX.match(ln)
+        if m:
+            year = int(m.group(2))
+            continue
+        if re.match(r"^(Ausstehend|Anstehend|Nächste|Upcoming|Overdue)", ln, re.I):
+            year = None
+            continue
+        d = ITEM_RX.match(ln)
+        if d and year:
+            try:
+                found.append(date(year, int(d.group(2)), int(d.group(1))))
+            except ValueError:
+                pass
+    return (max(found).isoformat() if found else ""), len(found)
+
+
 DATE_RX = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})")
 
 
@@ -221,6 +266,7 @@ def read_detail(ctx, url, log):
     """Öffnet die Account-Seite und liest Inhaber, letzte Aktivität und 'Zuletzt geändert'. Best effort."""
     page = ctx.new_page()
     fields = {}
+    timeline = {}
 
     def grab():
         try:
@@ -243,13 +289,25 @@ def read_detail(ctx, url, log):
             grab()
         except Exception:
             pass
+        try:  # Reiter 'Aktivität': Verlauf mit Datum der vergangenen Aufgaben, Anrufe und Termine
+            page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first.click(timeout=4000)
+            page.wait_for_timeout(3500)
+            lines = page.evaluate(LINES_JS)
+            timeline["datum"], timeline["anzahl"] = parse_timeline(lines)
+            if not timeline["datum"]:
+                timeline["zeilen"] = lines[:25]
+        except Exception as e:
+            timeline["fehler"] = str(e).splitlines()[0][:100]
     finally:
         page.close()
     pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
     act_raw, mod_raw = pick(r"letzte aktivit|aktivitätsdatum|last activity"), pick(r"zuletzt ge(ä|ae)ndert|last modified")
+    act_field = find_date(act_raw) if act_raw else ""
+    act = max(act_field, timeline.get("datum", ""))  # Feld oder Verlauf: das jüngere Datum gewinnt
     return {
         "owner": pick(r"inhaber|owner"),
-        "last_activity": find_date(act_raw) if act_raw else "",
+        "last_activity": act,
+        "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
         "last_activity_raw": act_raw[:60],
         "last_modified": find_date(mod_raw),
         "last_modified_raw": mod_raw.replace("\n", " ")[:80],
