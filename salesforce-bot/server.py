@@ -4,6 +4,7 @@ Läuft nur auf deinem Rechner (127.0.0.1). Die Salesforce-Daten verlassen den Re
 sie gehen nur an deinen Browser. Nur die erlaubten Seiten dürfen zugreifen.
 """
 import json
+import re
 import sys
 import threading
 import webbrowser
@@ -37,13 +38,13 @@ def log(text):
     job["log"].append(text)
 
 
-def run_job(kind, days, headed):
+def run_job(kind, days, headed, liste):
     try:
         if kind == "login":
             sf.do_login(log)
             job.update(state="done", message="Eingeloggt.")
         else:
-            rows, source, has_bookings = sf.collect(headed, log=log)
+            rows, source, has_bookings = sf.collect(headed, liste=liste, log=log)
             result.update(rows=rows, source=source, has_bookings=has_bookings,
                           updated=datetime.now().isoformat(timespec="seconds"))
             sf.OUT.mkdir(exist_ok=True)
@@ -126,8 +127,11 @@ class Handler(BaseHTTPRequestHandler):
             kind = "login" if url.path == "/login" else "liste"
             days = max(1, min(int(q.get("days", ["90"])[0]), 3650))
             headed = q.get("headed", ["0"])[0] == "1"
+            liste = q.get("liste", [""])[0].strip()
+            if not re.fullmatch(r"[A-Za-z0-9_]{1,40}", liste):
+                liste = "AllAccounts"
             job.update(state="running", kind=kind, log=[], message="")
-        threading.Thread(target=run_job, args=(kind, days, headed), daemon=True).start()
+        threading.Thread(target=run_job, args=(kind, days, headed, liste), daemon=True).start()
         self._send(202, {"started": kind})
 
 

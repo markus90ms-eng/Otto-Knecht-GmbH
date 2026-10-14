@@ -2,6 +2,7 @@
 import argparse
 import csv
 import os
+import re
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -125,6 +126,22 @@ def filter_rows(rows, plz_label, act_label, cutoff, prefixes=BW_PREFIXES):
     return result
 
 
+def skip_passkey_prompt(page, list_url, log):
+    """Salesforce zeigt manchmal eine Passkey-Einrichtung statt der Seite. Wenn möglich überspringen."""
+    if "passkey" not in page.url.lower() and "webauthn" not in page.url.lower():
+        return
+    log("  Salesforce fragt nach einem Passkey. Versuche zu überspringen ...")
+    for label in ("Später", "Spaeter", "Überspringen", "Skip", "Not now", "Nicht jetzt", "Maybe later", "Remind me later"):
+        pattern = re.compile(label, re.I)
+        btn = page.get_by_role("button", name=pattern).or_(page.get_by_role("link", name=pattern))
+        if btn.count():
+            btn.first.click()
+            page.wait_for_timeout(2500)
+            break
+    page.goto(list_url)
+    page.wait_for_timeout(3000)
+
+
 def read_all_rows(page):
     """Alle Zeilen der Listenansicht lesen (scrollt bis nichts mehr nachlädt)."""
     print("Warte auf die Tabelle ...", flush=True)
@@ -186,27 +203,11 @@ def _try_sids(ctx, base, sids):
 
 
 def api_login(ctx, log=print):
-    """Findet eine Sitzungs-Kennung, mit der die Salesforce-Abfrage funktioniert.
-    1. direkt mit der Browser-Sitzung, 2. über frontdoor.jsp (tauscht sie gegen eine Sitzung der My-Domain)."""
+    """Probiert die Browser-Sitzung für die Salesforce-Abfrage. Wenn die Firma das sperrt, klappt es nicht
+    (dann wird die Listenansicht gelesen)."""
     base = api_base()
-    seen = sorted({f"{c['name']}@{c['domain']}" for c in ctx.cookies() if c["name"] in ("sid", "oid", "sfdc-stream")})
+    seen = sorted({f"{c['name']}@{c['domain']}" for c in ctx.cookies() if c["name"] == "sid"})
     log(f"  Cookies: {', '.join(seen) or 'keine'}")
-    sids = _sids(ctx)
-    try:
-        return base, _try_sids(ctx, base, sids)
-    except RuntimeError as first:
-        log(f"  Direkte Anmeldung abgelehnt ({first}). Versuche Anmeldung über die My-Domain ...")
-    if not sids:
-        raise RuntimeError("keine Sitzungs-Kennung (sid) gefunden")
-    page = ctx.new_page()
-    try:
-        page.goto(f"{base}/secur/frontdoor.jsp?sid={sids[0]}&retURL=%2Flightning%2Fpage%2Fhome")
-        page.wait_for_timeout(3000)
-        log(f"  Frontdoor landete auf: {page.url.split('?')[0]}")
-    finally:
-        page.close()
-    after = sorted({f"{c['name']}@{c['domain']}" for c in ctx.cookies() if c["name"] == "sid"})
-    log(f"  sid-Cookies danach: {', '.join(after) or 'keine'}")
     return base, _try_sids(ctx, base, _sids(ctx))
 
 
@@ -296,10 +297,20 @@ def collect(headed=False, liste="AllAccounts", log=print):
                 return normalize_api(accounts, bookings), src, bookings is not None
             except Exception as e:  # API gesperrt o. ä. -> Rückfall auf Listenansicht
                 log(f"Direkte Abfrage nicht möglich ({e}). Lese stattdessen die Listenansicht ...")
-            page.goto(f"{sf_url()}/lightning/o/Account/list?filterName={liste}")
+            list_url = f"{sf_url()}/lightning/o/Account/list?filterName={liste}"
+            page.goto(list_url)
+            page.wait_for_timeout(3000)
+            skip_passkey_prompt(page, list_url, log)
+            log(f"  Seite: {page.url.split('?')[0]} | Titel: {page.title()}")
             if "login" in page.url:
                 raise NeedLogin("Sitzung abgelaufen.")
-            rows = read_all_rows(page)
+            try:
+                rows = read_all_rows(page)
+            except Exception as e:
+                SHOTS.mkdir(exist_ok=True)
+                shot = SHOTS / "fehler.png"
+                page.screenshot(path=str(shot), full_page=True)
+                raise RuntimeError(f"Listenansicht nicht lesbar ({str(e).splitlines()[0]}). Seite: {page.url.split('?')[0]}. Screenshot: {shot}")
         finally:
             browser.close()
     if not rows:
