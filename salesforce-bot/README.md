@@ -39,3 +39,7 @@ Die ID der Ansicht steht in der Adresszeile (`...list?filterName=00B...`). Dann:
 2. Beim ersten Mal dort auf **Bei Salesforce einloggen** klicken, danach auf **Liste erstellen**.
 Der Server (`server.py`) läuft nur auf 127.0.0.1:8766 und antwortet nur der Leadgenerator-Seite. Die Kundendaten werden nicht hochgeladen.
 Abfrage: erst direkt per SOQL (alle Treffer, ohne 2000er-Grenze), sonst Rückfall auf die Listenansicht.
+
+## Lokale Seite (ohne GitHub Pages)
+`Salesforce_starten.bat` öffnet jetzt `http://127.0.0.1:8766/` - dieselbe Liste mit allen Filtern, direkt aus dem Programm.
+Die Leadgenerator-Seite im Internet (Tab Salesforce) funktioniert weiterhin, ist aber nicht nötig.

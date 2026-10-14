@@ -14,8 +14,13 @@ from urllib.parse import parse_qs, urlparse
 import sf
 
 PORT = 8766
-PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
+PAGE = f"http://127.0.0.1:{PORT}/"
+LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
+UI_DIR = sf.BASE / "ui"
+CONTENT_TYPES = {".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8"}
 ALLOWED_ORIGINS = {
+    f"http://127.0.0.1:{PORT}",
+    f"http://localhost:{PORT}",
     "https://markus90ms-eng.github.io",
     "http://127.0.0.1:8765",
     "http://localhost:8765",
@@ -79,10 +84,26 @@ class Handler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         self._send(204 if self._origin_ok() else 403)
 
+    def _send_file(self, name):
+        target = UI_DIR / name
+        if target.suffix not in CONTENT_TYPES or not target.is_file() or target.parent != UI_DIR:
+            return self._send(404, {"error": "unbekannt"})
+        data = target.read_bytes()
+        self.send_response(200)
+        self.send_header("Content-Type", CONTENT_TYPES[target.suffix])
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self):
         if not self._origin_ok():
             return self._send(403, {"error": "Origin nicht erlaubt"})
         path = urlparse(self.path).path
+        if path in ("/", "/index.html"):
+            return self._send_file("index.html")
+        if path.lstrip("/") in ("salesforce.js", "shim.js", "style.css"):
+            return self._send_file(path.lstrip("/"))
         if path == "/status":
             return self._send(200, {
                 **job, "logged_in": sf.STATE.exists(),
@@ -122,6 +143,7 @@ def main():
     except OSError:
         sys.exit(f"Port {PORT} ist schon belegt. Läuft der Server evtl. schon in einem anderen Fenster?")
     print(f"Salesforce-Server läuft auf http://127.0.0.1:{PORT}")
+    print(f"Die Seite öffnet sich automatisch. Falls nicht: {PAGE} im Browser öffnen.")
     print("Dieses Fenster offen lassen, solange du die Liste nutzt. Zum Beenden: Fenster schließen.")
     if "--no-browser" not in sys.argv:
         webbrowser.open(PAGE)
