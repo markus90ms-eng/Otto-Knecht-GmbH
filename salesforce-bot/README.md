@@ -57,3 +57,6 @@ Ergebnis: nicht in Salesforce / Potenzial-Account / Bestandskunde / Ex-Kunde (je
 Gesperrt ist ein Account nur bei gesetzter Kundenkontaktsperre oder einem Wert im Feld "Account Sperre Status" (unbekannte Werte vorsichtshalber als gesperrt).
 Die Debitoren-Nr. ist nur eine Information und keine Sperre.
 Zusätzlich wird auf der Account-Seite Inhaber, Letzte Aktivität und Zuletzt geändert gelesen (soweit im Seitenlayout vorhanden).
+
+**Letzter Kontakt** = jüngeres Datum aus "Letzte Aktivität" und "Zuletzt geändert" (bei uns gilt beides als Kontakt).
+Filter in der Seite: letzter Kontakt über 3 / 6 / 12 Monate her, oder Kontaktdatum nicht lesbar.

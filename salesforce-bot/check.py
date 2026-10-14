@@ -295,12 +295,16 @@ def check_one(page, lead, log):
         except Exception as e:
             log(f"  Detailseite nicht lesbar: {str(e).splitlines()[0][:100]}")
     status, note = best["status"], best["note"]
-    if best.get("last_activity"):
-        days = (datetime.now().date() - datetime.fromisoformat(best["last_activity"]).date()).days
-        best["tage_ohne_aktivitaet"] = days
-        note += f" · Letzte Aktivität: {best['last_activity']} (vor {days} Tagen)"
-    if best.get("last_modified"):
-        note += f" · Zuletzt geändert: {best['last_modified']}"
+    # Letzter Kontakt = jüngeres Datum aus 'Letzte Aktivität' und 'Zuletzt geändert' (bei euch zählt beides als Kontakt)
+    dates = [(d, q) for d, q in ((best.get("last_activity"), "Aktivität"), (best.get("last_modified"), "Änderung")) if d]
+    if dates:
+        kontakt, quelle = max(dates)
+        tage = (datetime.now().date() - datetime.fromisoformat(kontakt).date()).days
+        best.update(letzter_kontakt=kontakt, kontakt_quelle=quelle, tage_seit_kontakt=tage)
+        note += f" · Letzter Kontakt: {kontakt} ({quelle}, vor {tage} Tagen)"
+    for label, key in (("Letzte Aktivität", "last_activity"), ("Zuletzt geändert", "last_modified")):
+        if best.get(key):
+            note += f" · {label}: {best[key]}"
     if best["art"] == "aehnlich":
         status, note = "unklar", f"Ähnlicher Account „{best['name']}“ mit gleicher PLZ. Prüfen! " + best["note"]
     elif len(out) > 1 and any(m["status"] == "vergeben" for m in out[1:]) and status != "vergeben":

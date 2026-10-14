@@ -25,7 +25,10 @@
         <option value="kunde">Bestandskunde, nicht gesperrt</option>
         <option value="ruhend">Ex-Kunde / inaktiv, nicht gesperrt</option>
         <option value="vergeben">gesperrt (nicht kontaktieren)</option>
-        <option value="inaktiv3m">Account, seit über 3 Monaten keine Aktivität</option>
+        <option value="inaktiv3m">Account, letzter Kontakt über 3 Monate her</option>
+        <option value="inaktiv6m">Account, letzter Kontakt über 6 Monate her</option>
+        <option value="inaktiv12m">Account, letzter Kontakt über 12 Monate her</option>
+        <option value="kontakt_unbekannt">Account, Kontaktdatum nicht lesbar</option>
         <option value="unklar">Account, Details unklar</option>
       </select>
       <p class="hint">Voraussetzung: Du bist über die Seite „Kundenliste“ bei Salesforce eingeloggt. Die Prüfung läuft nur lesend und dauert etwa 5 Sekunden pro Firma (höchstens 40 auf einmal).</p>
@@ -54,9 +57,10 @@
   function render() {
     const rows = state.visible.filter(sfcMatches);
     $("#results").innerHTML = rows.length
-      ? `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ</th><th>Ergebnis</th><th>Gefundener Account</th><th>Letzte Aktivität</th><th>Zuletzt geändert</th><th>Inhaber</th></tr></thead><tbody>${rows.map((l) => {
+      ? `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ</th><th>Ergebnis</th><th>Gefundener Account</th><th>Letzter Kontakt</th><th>Letzte Aktivität</th><th>Zuletzt geändert</th><th>Inhaber</th></tr></thead><tbody>${rows.map((l) => {
           const r = sfc.results[l.id], m = r?.matches?.[0];
           return `<tr><td class="name">${esc(l.name)}</td><td>${esc(l.address)}</td><td>${sfcBadge(l) || '<span class="sub">noch nicht geprüft</span>'}<div class="sub">${esc(r?.note || "")}</div></td><td title="${esc((m?.felder || []).join(', '))}">${esc(m?.name || "")}<div class="sub">${esc([m?.plz, m?.ort].filter(Boolean).join(" "))} · ${esc(m?.firmenstatus || "")}${m?.kontaktsperre ? " · <b>Kontaktsperre</b>" : ""}${m?.debitor ? " · Debitor " + esc(m.debitor) : ""}</div></td>
+            <td>${m ? (m.letzter_kontakt ? "<b>" + esc(fmtDate(m.letzter_kontakt)) + "</b>" + (m.tage_seit_kontakt > 90 ? " ⏳" : "") + `<div class="sub">${esc(m.kontakt_quelle || "")}, vor ${m.tage_seit_kontakt} Tagen</div>` : '<span class="sub">nicht lesbar</span>') : ""}</td>
             <td>${m ? (m.last_activity ? esc(fmtDate(m.last_activity)) + (m.tage_ohne_aktivitaet > 90 ? " ⏳" : "") : '<span class="sub">nicht lesbar</span>') : ""}</td>
             <td>${esc(m?.last_modified ? fmtDate(m.last_modified) : m ? "" : "")}</td><td>${esc(m?.owner || "")}</td></tr>`;
         }).join("")}</tbody></table></div>`
