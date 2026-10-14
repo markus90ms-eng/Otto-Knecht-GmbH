@@ -225,6 +225,22 @@ def interpret(row):
     return "unklar", "Status nicht eindeutig. " + facts
 
 
+HIST_JS = "() => {" + sf.DEEP + """
+  const out = [];
+  for (const t of deepAll("table[role='grid']")) {
+    const heads = deepAll('thead th', t).map((h) => (h.getAttribute('title') || h.innerText || '').trim());
+    deepAll('tbody tr', t).forEach((tr) => {
+      const cells = [...tr.children];
+      const off = cells.length - heads.length;
+      const o = {};
+      heads.forEach((h, i) => { const c = cells[i + off]; if (c && h) o[h] = (c.innerText || '').trim(); });
+      out.push(o);
+    });
+    if (out.length) break;
+  }
+  return out;
+}"""
+
 ERROR_RX = re.compile(r"Unterbrechung|CSS Error|Wir bitten", re.I)
 MONTHS = {"januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5, "juni": 6, "juli": 7, "august": 8,
           "september": 9, "oktober": 10, "november": 11, "dezember": 12}
@@ -261,6 +277,33 @@ def find_date(text):
     m = DATE_RX.search(text or "")
     d = sf.parse_date(m.group(1)) if m else None
     return d.isoformat() if d else ""
+
+
+def read_history_list(ctx, url):
+    """Zweiter Weg: die Seite 'Aktivitätsverlauf' (verwandte Liste) des Accounts. Gibt (neuestes vergangenes Datum, Anzahl) zurück."""
+    m = re.search(r"/r/(?:Account/)?([A-Za-z0-9]{15,18})", url)
+    if not m:
+        return "", 0
+    page = ctx.new_page()
+    try:
+        page.goto(f"{sf.sf_url()}/lightning/r/Account/{m.group(1)}/related/ActivityHistories/view")
+        try:
+            page.wait_for_selector("table[role='grid'] tbody tr", timeout=15_000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
+        rows = page.evaluate(HIST_JS)
+    finally:
+        page.close()
+    today = date.today().isoformat()
+    dates = []
+    for r in rows:
+        for k, v in r.items():
+            if re.search(r"datum|date|fällig|faellig", k, re.I):
+                d = find_date(v)
+                if d and d <= today:
+                    dates.append(d)
+    return (max(dates) if dates else ""), len(rows)
 
 
 def read_detail(ctx, url, log):
@@ -315,6 +358,15 @@ def read_detail(ctx, url, log):
             timeline["datum"], timeline["anzahl"] = datum, anzahl
             if not datum:
                 timeline["zeilen"] = lines[:25]
+                try:  # Rückfall: Liste 'Aktivitätsverlauf' statt Reiter
+                    d2, n2 = read_history_list(ctx, url)
+                    if d2:
+                        timeline["datum"], timeline["anzahl"], timeline["quelle"] = d2, n2, "Aktivitätsverlauf-Liste"
+                        timeline.pop("zeilen", None)
+                    else:
+                        timeline["liste"] = f"{n2} Zeilen, kein Datum"
+                except Exception as e:
+                    timeline["liste"] = "Liste nicht lesbar: " + (str(e).strip().splitlines()[0][:100] if str(e).strip() else type(e).__name__)
         except Exception as e:
             timeline["fehler"] = ((timeline.get("fehler", "") + " | ") if timeline.get("fehler") else "") + "Aktivität: " + (str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__)
     finally:
