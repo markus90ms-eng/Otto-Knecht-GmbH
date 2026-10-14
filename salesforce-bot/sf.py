@@ -169,21 +169,45 @@ def plz_like(prefix=""):
     return " OR ".join(f"{prefix}BillingPostalCode LIKE '{p}%'" for p in BW_PREFIXES)
 
 
-def api_login(ctx):
-    """Findet eine Sitzungs-Kennung, mit der die Salesforce-Abfrage funktioniert."""
-    base = api_base()
-    sids = [c["value"] for c in ctx.cookies() if c["name"] == "sid" and "salesforce.com" in c["domain"]]
-    sids += [c["value"] for c in ctx.cookies() if c["name"] == "sid" and "force.com" in c["domain"]]
-    if not sids:
-        raise RuntimeError("keine Sitzungs-Kennung (sid) gefunden")
-    last_err = "unbekannt"
-    for sid in dict.fromkeys(sids):
+def _sids(ctx):
+    vals = [c["value"] for c in ctx.cookies() if c["name"] == "sid" and ("salesforce.com" in c["domain"] or "force.com" in c["domain"])]
+    return list(dict.fromkeys(vals))
+
+
+def _try_sids(ctx, base, sids):
+    last_err = "keine Sitzungs-Kennung (sid) gefunden"
+    for sid in sids:
         headers = {"Authorization": f"Bearer {sid}"}
         resp = ctx.request.get(f"{base}/services/data/{API_VERSION}/query", params={"q": "SELECT Id FROM Account LIMIT 1"}, headers=headers)
         if resp.ok:
-            return base, headers
-        last_err = f"HTTP {resp.status}: {resp.text()[:300]}"
+            return headers
+        last_err = f"HTTP {resp.status}: {resp.text()[:200]}"
     raise RuntimeError(last_err)
+
+
+def api_login(ctx, log=print):
+    """Findet eine Sitzungs-Kennung, mit der die Salesforce-Abfrage funktioniert.
+    1. direkt mit der Browser-Sitzung, 2. über frontdoor.jsp (tauscht sie gegen eine Sitzung der My-Domain)."""
+    base = api_base()
+    seen = sorted({f"{c['name']}@{c['domain']}" for c in ctx.cookies() if c["name"] in ("sid", "oid", "sfdc-stream")})
+    log(f"  Cookies: {', '.join(seen) or 'keine'}")
+    sids = _sids(ctx)
+    try:
+        return base, _try_sids(ctx, base, sids)
+    except RuntimeError as first:
+        log(f"  Direkte Anmeldung abgelehnt ({first}). Versuche Anmeldung über die My-Domain ...")
+    if not sids:
+        raise RuntimeError("keine Sitzungs-Kennung (sid) gefunden")
+    page = ctx.new_page()
+    try:
+        page.goto(f"{base}/secur/frontdoor.jsp?sid={sids[0]}&retURL=%2Flightning%2Fpage%2Fhome")
+        page.wait_for_timeout(3000)
+        log(f"  Frontdoor landete auf: {page.url.split('?')[0]}")
+    finally:
+        page.close()
+    after = sorted({f"{c['name']}@{c['domain']}" for c in ctx.cookies() if c["name"] == "sid"})
+    log(f"  sid-Cookies danach: {', '.join(after) or 'keine'}")
+    return base, _try_sids(ctx, base, _sids(ctx))
 
 
 def api_query_all(ctx, base, headers, soql, log, label):
@@ -204,7 +228,7 @@ def api_query_all(ctx, base, headers, soql, log, label):
 
 def fetch_via_api(ctx, log):
     """Alle Firmen in BW plus bisherige Buchungen (gewonnene Verkaufschancen), per SOQL."""
-    base, headers = api_login(ctx)
+    base, headers = api_login(ctx, log)
     try:
         accounts = api_query_all(ctx, base, headers,
                                  f"SELECT {ACCOUNT_FIELDS_FULL} FROM Account WHERE ({plz_like()})", log, "Firmen")
