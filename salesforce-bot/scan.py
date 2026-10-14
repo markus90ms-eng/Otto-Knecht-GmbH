@@ -38,21 +38,43 @@ def account_id(href):
     return m.group(1) if m else ""
 
 
+SCROLL_JS = "() => {" + sf.DEEP + """
+  const t = deepAll("table[role='grid']")[0];
+  if (!t) return false;
+  const scrollable = (e) => { const st = getComputedStyle(e); return /(auto|scroll)/.test(st.overflowY) && e.scrollHeight > e.clientHeight + 5; };
+  const parentOf = (e) => e.parentElement || (e.getRootNode && e.getRootNode().host) || null;
+  let el = t;
+  while (el && !scrollable(el)) el = parentOf(el);
+  if (!el) { const y = window.scrollY; window.scrollBy(0, window.innerHeight * 0.7); return window.scrollY !== y; }
+  const before = el.scrollTop;
+  el.scrollTop += Math.max(150, el.clientHeight * 0.6);
+  return el.scrollTop !== before;
+}"""
+
+
 def read_rows(page):
-    """Alle Zeilen der Account-Tabelle lesen (scrollt, bis nichts mehr nachlädt)."""
-    last, stable, rows = -1, 0, []
-    for _ in range(600):
-        rows = page.evaluate(check.ACCOUNTS_JS) or []
-        stable = stable + 1 if len(rows) == last else 0
-        if stable >= 3:
-            break
-        last = len(rows)
+    """Alle Zeilen der Account-Tabelle lesen. Salesforce lädt beim Scrollen nach und hält nur einen Ausschnitt im Browser:
+    deshalb in kleinen Schritten scrollen und die Zeilen nach jedem Schritt sammeln (nicht nur am Ende lesen)."""
+    seen, last_n, stable = {}, -1, 0
+    for _ in range(3000):
+        for r in page.evaluate(check.ACCOUNTS_JS) or []:
+            seen[r.get("__href") or r.get("__text")] = r
+        moved = False
         try:
-            page.locator("table[role='grid'] tbody tr").last.scroll_into_view_if_needed(timeout=3000)
+            moved = page.evaluate(SCROLL_JS)
         except Exception:
             pass
-        page.wait_for_timeout(1200)
-    return rows
+        if not moved:  # Rückfall: letzte Zeile in den Sichtbereich holen (löst bei vielen Seiten das Nachladen aus)
+            try:
+                page.locator("table[role='grid'] tbody tr").last.scroll_into_view_if_needed(timeout=3000)
+            except Exception:
+                pass
+        page.wait_for_timeout(700)
+        stable = stable + 1 if len(seen) == last_n else 0
+        last_n = len(seen)
+        if stable >= 6:
+            break
+    return list(seen.values())
 
 
 def fetch_prefix(page, prefix, term_tpl, log):
@@ -77,6 +99,11 @@ def fetch_prefix(page, prefix, term_tpl, log):
     page.get_by_role("button", name=re.compile(r"Anwenden", re.I)).first.click(timeout=8000)
     page.wait_for_timeout(6000)
     rows = read_rows(page)
+    try:
+        label = next((l for l in page.evaluate(check.LINES_JS) if re.match(r"^[\d.]+\+?\s+Ergebnis", l)), "")
+    except Exception:
+        label = ""
+    log(f"    PLZ {prefix}: {len(rows)} Zeilen gelesen (Salesforce meldet: {label or 'k. A.'})")
     out = []
     for r in rows:
         plz = (r.get("PLZ (Rechnungsanschrift)") or "").strip()
