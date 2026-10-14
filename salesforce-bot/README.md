@@ -49,3 +49,9 @@ Seite `http://127.0.0.1:8766/abgleich.html` (Tab "Abgleich"): Firmennamen eintra
 auf "Mit Salesforce abgleichen" klicken. Der Bot sucht jede Firma im Suchfeld der Account-Liste, liest bei einem Treffer
 Inhaber und letzte Aktivität von der Detailseite. Nur lesend. Ergebnis: frei / Account, lange nicht betreut / Account, aktiv / unklar.
 In der Leadgenerator-Seite gibt es denselben Abgleich über den Knopf "Mit Salesforce abgleichen" in jeder Firmenliste.
+
+## Abgleich über die Salesforce-Suche (aktuell)
+Der Abgleich öffnet pro Firma die Salesforce-Suche und liest die Account-Tabelle der Trefferseite
+(Firmenstatus, Kunden Kontaktsperre, Account Sperre Status, VIS ID, Debitoren-Nr., PLZ).
+Ergebnis: nicht in Salesforce / Potenzial-Account ohne Sperre / Ex-Kunde / gesperrt oder Kunde (nicht kontaktieren).
+Unbekannte Werte im Feld "Account Sperre Status" werden vorsichtshalber als gesperrt behandelt.

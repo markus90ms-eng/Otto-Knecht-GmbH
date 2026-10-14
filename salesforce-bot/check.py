@@ -1,12 +1,12 @@
-"""Abgleich: Gibt es die Firmen aus dem Leadgenerator schon als Account in Salesforce?
+"""Abgleich: Gibt es die Firmen aus dem Leadgenerator schon als Account in Salesforce, und darf man sie kontaktieren?
 
-Für jede Firma wird in der Account-Liste gesucht (wie ein Mensch im Suchfeld). Bei einem Treffer wird die
-Detailseite geöffnet und Inhaber und letzte Aktivität gelesen. Nur lesen, es wird nichts verändert.
+Für jede Firma wird die Salesforce-Suche geöffnet (wie ein Mensch) und die Account-Tabelle der Trefferseite gelesen:
+Firmenstatus, Kundenkontaktsperre, Account-Sperre, VIS ID, Debitoren-Nr. Nur lesen, es wird nichts verändert.
 """
 import base64
 import json
 import re
-from datetime import date, datetime, timedelta
+from datetime import datetime
 from urllib.parse import quote
 
 import sf
@@ -15,18 +15,35 @@ LEGAL = {
     "gmbh", "ag", "kg", "ohg", "ug", "ek", "mbh", "co", "und", "inh", "inhaber", "gbr", "se", "kgaa", "ltd",
     "eg", "ev", "stiftung", "haftungsbeschraenkt", "cokg", "gmbhcokg", "the", "der", "die", "das",
 }
-SEARCH_PLACEHOLDER = re.compile(r"durchsuchen|search this list", re.I)
 
-ROWS_JS = sf.DEEP_ROWS_JS
+# Account-Tabelle der Trefferseite: Zellen nach Spaltenposition (die Tabelle hat keine data-label-Attribute)
+ACCOUNTS_JS = "() => {" + sf.DEEP + """
+  for (const t of deepAll("table[role='grid']")) {
+    const heads = deepAll('thead th', t).map((h) => (h.getAttribute('title') || h.innerText || '').trim());
+    if (!heads.some((h) => /^accountname$/i.test(h))) continue;
+    return deepAll('tbody tr', t).map((tr) => {
+      const cells = [...tr.children];
+      const off = cells.length - heads.length;
+      const o = {};
+      heads.forEach((h, i) => { const c = cells[i + off]; if (c && h) o[h] = cellVal(c); });
+      const a = deepAll("a[href*='/lightning/r/']", tr)[0];
+      o.__href = a ? a.getAttribute('href') : '';
+      o.__text = tr.innerText.trim();
+      return o;
+    });
+  }
+  return null;
+}"""
 
-DETAIL_JS = "() => {" + sf.DEEP + """
-  const out = {};
-  deepAll('records-record-layout-item, lightning-output-field').forEach((el) => {
-    const l = deepAll('.test-id__field-label, .slds-form-element__label', el)[0];
-    const v = deepAll('.test-id__field-value, .slds-form-element__control', el)[0];
-    if (l && v) out[l.innerText.trim()] = v.innerText.trim();
-  });
-  return out;
+PAGE_TEXT_JS = """() => {
+  const walk = (n) => {
+    if (n.nodeType === 3) return n.textContent;
+    if (n.nodeType === 1 && /^(SCRIPT|STYLE)$/.test(n.tagName)) return '';
+    let t = n.shadowRoot ? walk(n.shadowRoot) : '';
+    for (const c of n.childNodes) t += ' ' + walk(c);
+    return t;
+  };
+  return walk(document.body);
 }"""
 
 APP_NAME = "LKM_AnwendungVertrieb"
@@ -133,102 +150,101 @@ def search_terms(name):
 
 
 def pick_matches(lead, rows):
-    """Passende Zeilen aus den Suchergebnissen, beste zuerst."""
+    """Passende Zeilen aus den Suchergebnissen, beste zuerst. Gibt (score, zeile) zurück."""
     found = []
     for r in rows:
-        keys = [k for k in r if not k.startswith("__")]
-        name_key = next((k for k in keys if re.search(r"name", k, re.I)), keys[0] if keys else None)
-        if not name_key:
-            continue
-        tel = next((r[k] for k in keys if re.search(r"telefon|phone", k, re.I)), "")
-        score = name_score(lead.get("name", ""), r[name_key])
-        phone = phone_match(lead.get("phone", ""), tel)
-        plz = bool(lead.get("plz")) and lead["plz"] in r.get("__text", "")
-        if score >= 0.6 or (phone and score >= 0.3):
-            found.append((score + (0.5 if phone else 0) + (0.2 if plz else 0), r, name_key, tel))
+        score = name_score(lead.get("name", ""), r.get("Accountname", ""))
+        plz_same = bool(lead.get("plz")) and r.get("PLZ (Rechnungsanschrift)", "").strip() == lead["plz"]
+        if score >= 0.6:
+            found.append((score + (0.3 if plz_same else 0), r, "gleich"))
+        elif plz_same and score >= 0.3:
+            found.append((score, r, "aehnlich"))  # gleiche PLZ, ähnlicher Name: könnte derselbe Betrieb sein
     found.sort(key=lambda x: -x[0])
     return found
 
 
-def parse_iso(text):
-    d = sf.parse_date(text or "")
-    return d.isoformat() if d else ""
+def truthy(v):
+    return str(v or "").strip().lower() in ("ja", "true", "wahr", "x", "1", "yes")
 
 
-def classify(matches, months=3):
-    """frei = nicht in Salesforce | ruhend = Account, aber lange nicht betreut | vergeben = Account, aktiv | unklar"""
-    if not matches:
-        return "frei", "Nicht in Salesforce gefunden."
-    best = matches[0]
-    last = best.get("last_activity", "")
-    owner = best.get("owner", "")
-    who = f" Inhaber: {owner}." if owner else ""
-    if last == "nie":
-        return "ruhend", f"Account vorhanden, noch nie Aktivität.{who}"
-    if last:
-        cutoff = (date.today() - timedelta(days=30 * months)).isoformat()
-        if last < cutoff:
-            return "ruhend", f"Account vorhanden, letzte Aktivität {last}.{who}"
-        return "vergeben", f"Account vorhanden, letzte Aktivität {last}.{who}"
-    return "unklar", f"Account vorhanden, Details nicht lesbar.{who}"
+def interpret(row):
+    """Account-Zeile -> (Status, Hinweistext).
+    frei = nicht in Salesforce | potenzial = Account vorhanden, Potenzial, nicht gesperrt
+    vergeben = gesperrt oder Kunde | ruhend = Ex-Kunde/inaktiv | unklar"""
+    firmenstatus = (row.get("Firmenstatus") or "").strip()
+    sperre = truthy(row.get("Kunden Kontaktsperre"))
+    acc_sperre = (row.get("Account Sperre Status") or "").strip()
+    debitor = (row.get("Debitoren-Nr.") or "").strip()
+    vis = (row.get("VIS ID") or "").strip()
+    facts = (f"Firmenstatus: {firmenstatus or '–'} · Kontaktsperre: {'JA' if sperre else 'nein'}"
+             f" · Sperre-Status: {acc_sperre or '–'} · Debitor: {debitor or '–'} · VIS: {vis or '–'}")
+    unlocked = re.fullmatch(r"(keine( sperre)?|nicht gesperrt|-+|ok|aktiv|frei|nein|entsperrt)", acc_sperre.lower())
+    locked = sperre or (acc_sperre and not unlocked)  # unbekannte Werte lieber als gesperrt behandeln
+    if locked:
+        return "vergeben", "NICHT kontaktieren: Sperre gesetzt. " + facts
+    if re.search(r"\bex\b|ex-|inaktiv|ehemal", firmenstatus, re.I) and not re.search(r"^kunde", firmenstatus, re.I):
+        return "ruhend", "Ehemaliger oder inaktiver Kunde. " + facts
+    if re.search(r"kunde|aktiv", firmenstatus, re.I) or debitor:
+        return "vergeben", "Bestandskunde oder hat Debitoren-Nr. " + facts
+    if re.search(r"potenzial|interessent|lead|neu", firmenstatus, re.I):
+        return "potenzial", "Account vorhanden, Potenzial, keine Sperre. " + facts
+    return "unklar", "Status nicht eindeutig. " + facts
 
 
-def read_detail(ctx, url, log):
-    page = ctx.new_page()
-    try:
-        page.goto(url)
-        try:
-            page.wait_for_selector("records-record-layout-item", timeout=15_000)
-        except Exception:
-            pass
-        page.wait_for_timeout(1000)
-        fields = page.evaluate(DETAIL_JS)
-    finally:
-        page.close()
-    pick = lambda rx: next((v for k, v in fields.items() if re.search(rx, k, re.I) and v), "")
-    act = pick(r"letzte aktivit|last activity")
-    return {
-        "owner": pick(r"kontoinhaber|account owner|accountinhaber|inhaber|owner"),
-        "last_activity": parse_iso(act) if act else "nie" if fields else "",
-        "adresse": pick(r"rechnungsadresse|billing address"),
-        "felder": len(fields),
-    }
+def top_accounts(page, term, log):
+    """Öffnet die Salesforce-Suche und liest die Account-Tabelle. Gibt die Zeilen zurück ([] = keine Treffer)."""
+    page.goto("about:blank")  # jedes Mal neu laden, damit die Trefferseite sicher neu aufgebaut wird
+    page.goto(search_url(term))
+    rows = None
+    stable = 0
+    last = -1
+    for _ in range(50):  # bis zu ~25 s warten
+        page.wait_for_timeout(500)
+        if "login" in page.url:
+            raise sf.NeedLogin("Sitzung abgelaufen.")
+        rows = page.evaluate(ACCOUNTS_JS)
+        if rows is not None:
+            stable = stable + 1 if len(rows) == last else 0
+            last = len(rows)
+            if stable >= 2 and (rows or page.title()):
+                return rows
+        elif re.search(r"Keine Ergebnisse|keine Treffer|No results", page.evaluate(PAGE_TEXT_JS), re.I):
+            return []
+    if rows is not None:
+        return rows
+    raise RuntimeError(f"Suchergebnisse nicht lesbar (Seite: {page.url.split('#')[0]}, Titel: {page.title()})")
 
 
-def check_one(page, ctx, box, lead, log, months):
-    rows = []
-    matches = []
+def check_one(page, lead, log):
+    rows, matches = [], []
     for term in search_terms(lead.get("name", "")):
-        box.fill(term)
-        box.press("Enter")
-        page.wait_for_timeout(1800)
-        prev = -1
-        for _ in range(8):  # warten, bis sich die Trefferliste beruhigt hat
-            n = page.locator("table[role='grid'] tbody tr").count()
-            if n == prev:
-                break
-            prev = n
-            page.wait_for_timeout(400)
-        rows = page.evaluate(ROWS_JS)
+        rows = top_accounts(page, term, log)
         matches = pick_matches(lead, rows)
         if matches:
             break
     out = []
-    for i, (score, r, name_key, tel) in enumerate(matches[:3]):
+    for score, r, art in matches[:3]:
         href = r.get("__href", "")
-        item = {"name": r[name_key], "telefon": tel, "url": (sf.sf_url() + href) if href.startswith("/") else href,
-                "score": round(score, 2), "owner": "", "last_activity": ""}
-        if i == 0 and item["url"]:
-            try:
-                item.update({k: v for k, v in read_detail(ctx, item["url"], log).items() if k in ("owner", "last_activity", "adresse")})
-            except Exception as e:
-                log(f"  Detailseite nicht lesbar: {str(e).splitlines()[0][:100]}")
-        out.append(item)
-    status, note = classify(out, months)
+        status, note = interpret(r)
+        out.append({
+            "name": r.get("Accountname", ""), "plz": r.get("PLZ (Rechnungsanschrift)", ""), "ort": r.get("Stadt (Rechnungsanschrift)", ""),
+            "firmenstatus": r.get("Firmenstatus", ""), "kontaktsperre": truthy(r.get("Kunden Kontaktsperre")),
+            "debitor": r.get("Debitoren-Nr.", ""), "vis": r.get("VIS ID", ""),
+            "url": (sf.sf_url() + href) if href.startswith("/") else href, "art": art,
+            "status": status, "note": note, "score": round(score, 2),
+        })
+    if not out:
+        return {"status": "frei", "note": "Nicht in Salesforce gefunden.", "matches": [], "checked": datetime.now().isoformat(timespec="seconds")}
+    best = out[0]
+    status, note = best["status"], best["note"]
+    if best["art"] == "aehnlich":
+        status, note = "unklar", f"Ähnlicher Account „{best['name']}“ mit gleicher PLZ. Prüfen! " + best["note"]
+    elif len(out) > 1 and any(m["status"] == "vergeben" for m in out[1:]) and status != "vergeben":
+        note += " Achtung: weiterer ähnlicher Account ist gesperrt/Kunde."
     return {"status": status, "note": note, "matches": out, "checked": datetime.now().isoformat(timespec="seconds")}
 
 
-def check_leads(leads, liste="AllAccounts", headed=False, log=print, on_result=lambda i, r: None, months=3):
+def check_leads(leads, liste="", headed=False, log=print, on_result=lambda i, r: None, months=3):
     """leads: [{id, name, phone, plz}]. Ruft on_result(id, ergebnis) nach jeder Firma auf."""
     if not sf.STATE.exists():
         raise sf.NeedLogin("Noch nicht eingeloggt.")
@@ -236,28 +252,14 @@ def check_leads(leads, liste="AllAccounts", headed=False, log=print, on_result=l
         browser, ctx = sf._session(p, headed)
         try:
             page = ctx.new_page()
-            url = f"{sf.sf_url()}/lightning/o/Account/list?filterName={liste}"
-            log("Öffne Account-Liste ...")
-            page.goto(url)
-            page.wait_for_timeout(3000)
-            sf.skip_passkey_prompt(page, url, log)
-            if "login" in page.url:
-                raise sf.NeedLogin("Sitzung abgelaufen.")
-            box = page.get_by_placeholder(SEARCH_PLACEHOLDER)
-            try:
-                box.first.wait_for(timeout=60_000)
-            except Exception:
-                sf.SHOTS.mkdir(exist_ok=True)
-                shot = sf.SHOTS / "fehler.png"
-                page.screenshot(path=str(shot), full_page=True)
-                raise RuntimeError(f"Suchfeld der Account-Liste nicht gefunden (Seite: {page.url.split('?')[0]}). Screenshot: {shot}")
-            box = box.first
             for n, lead in enumerate(leads, 1):
                 log(f"  Prüfe {n}/{len(leads)}: {lead.get('name', '')}")
                 try:
-                    result = check_one(page, ctx, box, lead, log, months)
+                    result = check_one(page, lead, log)
+                except sf.NeedLogin:
+                    raise
                 except Exception as e:
-                    result = {"status": "fehler", "note": str(e).splitlines()[0][:160], "matches": [], "checked": ""}
+                    result = {"status": "fehler", "note": str(e).splitlines()[0][:200], "matches": [], "checked": ""}
                 on_result(lead["id"], result)
         finally:
             browser.close()

@@ -20,9 +20,10 @@
       <label for="sfc-filter">Anzeigen</label>
       <select id="sfc-filter">
         <option value="">alle</option>
-        <option value="frei">nur frei (nicht in Salesforce)</option>
-        <option value="ruhend">Account, lange nicht betreut</option>
-        <option value="vergeben">Account, aktiv vergeben</option>
+        <option value="frei">nicht in Salesforce</option>
+        <option value="potenzial">Potenzial-Account, keine Sperre</option>
+        <option value="ruhend">Ex-Kunde / inaktiv</option>
+        <option value="vergeben">gesperrt oder Kunde (nicht kontaktieren)</option>
         <option value="unklar">Account, Details unklar</option>
       </select>
       <p class="hint">Voraussetzung: Du bist über die Seite „Kundenliste“ bei Salesforce eingeloggt. Die Prüfung läuft nur lesend und dauert etwa 5 Sekunden pro Firma (höchstens 40 auf einmal).</p>
@@ -35,7 +36,7 @@
       <button id="diag-run">Analysieren</button>
       <pre id="diag-out" class="sf-log" style="user-select:all"></pre>
     </details>
-    <div class="sf-warn">Vorläufig: Das Ergebnis „Nicht in Salesforce“ ist noch <b>nicht verlässlich</b>. Bitte keinen Betrieb allein danach anrufen, bis der Abgleich fertig angepasst ist.</div>
+    <div class="sf-warn"><b>Neu, noch ungeprüft bei euch:</b> Prüfe die ersten Ergebnisse bitte von Hand in Salesforce (zum Beispiel eine bekannte Firma mit Kontaktsperre), bevor du dich darauf verlässt. „Nicht kontaktieren“ gilt auch bei unbekannten Sperre-Werten.</div>
     <div id="status-msg" hidden></div>
     <div id="results"></div>
   </main>
@@ -51,9 +52,9 @@
   function render() {
     const rows = state.visible.filter(sfcMatches);
     $("#results").innerHTML = rows.length
-      ? `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ</th><th>Ergebnis</th><th>Inhaber</th><th>Letzte Aktivität</th></tr></thead><tbody>${rows.map((l) => {
+      ? `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ</th><th>Ergebnis</th><th>Firmenstatus</th><th>Gefundener Account</th></tr></thead><tbody>${rows.map((l) => {
           const r = sfc.results[l.id], m = r?.matches?.[0];
-          return `<tr><td class="name">${esc(l.name)}</td><td>${esc(l.address)}</td><td>${sfcBadge(l) || '<span class="sub">noch nicht geprüft</span>'}<div class="sub">${esc(r?.note || "")}</div></td><td>${esc(m?.owner || "")}</td><td>${esc(fmtDate(m?.last_activity === "nie" ? "" : m?.last_activity) || (m ? "nie / unbekannt" : ""))}</td></tr>`;
+          return `<tr><td class="name">${esc(l.name)}</td><td>${esc(l.address)}</td><td>${sfcBadge(l) || '<span class="sub">noch nicht geprüft</span>'}<div class="sub">${esc(r?.note || "")}</div></td><td>${esc(m?.firmenstatus || "")}${m?.kontaktsperre ? " · <b>Kontaktsperre</b>" : ""}</td><td>${esc(m?.name || "")}<div class="sub">${esc([m?.plz, m?.ort].filter(Boolean).join(" "))}</div></td></tr>`;
         }).join("")}</tbody></table></div>`
       : `<div class="sf-empty"><h3>Firmen eintragen</h3><p>Links die Firmennamen einfügen, eine pro Zeile, und auf <b>Mit Salesforce abgleichen</b> klicken.</p></div>`;
   }

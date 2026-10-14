@@ -186,6 +186,15 @@ def read_all_rows(page):
     return page.evaluate(DEEP_ROWS_JS)
 
 
+# ---------- Daten sammeln: erst Salesforce-Abfrage (alle Treffer), sonst Listenansicht ----------
+
+API_VERSION = "v59.0"
+
+
+class NeedLogin(Exception):
+    pass
+
+
 def api_base():
     return os.environ.get("SF_API_URL") or sf_url().replace(".lightning.force.com", ".my.salesforce.com")
 
