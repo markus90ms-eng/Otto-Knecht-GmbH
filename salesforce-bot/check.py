@@ -225,6 +225,7 @@ def interpret(row):
     return "unklar", "Status nicht eindeutig. " + facts
 
 
+ERROR_RX = re.compile(r"Unterbrechung|CSS Error|Wir bitten", re.I)
 MONTHS = {"januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5, "juni": 6, "juli": 7, "august": 8,
           "september": 9, "oktober": 10, "november": 11, "dezember": 12}
 MONTH_RX = re.compile(r"^(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s*[•·\-–]\s*(\d{4})", re.I)
@@ -296,12 +297,23 @@ def read_detail(ctx, url, log):
             timeline["tabs"] = [t.strip() for t in page.get_by_role("tab").all_inner_texts() if t.strip()][:12]
         except Exception:
             pass
-        try:  # Reiter 'Aktivität': Verlauf mit Datum der vergangenen Aufgaben, Anrufe und Termine
+        def read_timeline():
             page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first.click(timeout=4000)
             page.wait_for_timeout(3500)
             lines = page.evaluate(LINES_JS)
-            timeline["datum"], timeline["anzahl"] = parse_timeline(lines)
-            if not timeline["datum"]:
+            datum, anzahl = parse_timeline(lines)
+            return lines, datum, anzahl
+
+        try:  # Reiter 'Aktivität': Verlauf mit Datum der vergangenen Aufgaben, Anrufe und Termine
+            lines, datum, anzahl = read_timeline()
+            if not datum and any(ERROR_RX.search(l) for l in lines[:60]):
+                # Salesforce zeigt manchmal eine Fehlerseite ("CSS Error"): Seite neu laden und noch einmal versuchen
+                timeline["wiederholt"] = True
+                page.goto(url)
+                page.wait_for_timeout(5000)
+                lines, datum, anzahl = read_timeline()
+            timeline["datum"], timeline["anzahl"] = datum, anzahl
+            if not datum:
                 timeline["zeilen"] = lines[:25]
         except Exception as e:
             timeline["fehler"] = ((timeline.get("fehler", "") + " | ") if timeline.get("fehler") else "") + "Aktivität: " + (str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__)
