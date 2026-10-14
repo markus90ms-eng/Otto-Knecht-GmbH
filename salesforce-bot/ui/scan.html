@@ -45,6 +45,7 @@
   <main>
     <div class="toolbar"><div id="summary">Noch keine Daten.</div><div class="actions"><button id="sc-csv">CSV-Export</button></div></div>
     <div id="status-msg" hidden></div>
+    <div id="sc-warn"></div>
     <div id="results"></div>
   </main>
 </div>
@@ -65,6 +66,7 @@
       (!cut || (r.letzter_kontakt ? r.letzter_kontakt < cut : nodate && r.gelesen)));
     rows.sort((a, b) => (a.letzter_kontakt || "0000").localeCompare(b.letzter_kontakt || "0000") || a.plz.localeCompare(b.plz));
     sc.visible = rows;
+    $("#sc-warn").innerHTML = (sc.capped && sc.capped.length ? `<div class="sf-warn">Bei diesen PLZ gibt es evtl. <b>mehr Accounts als sichtbar</b> (Grenze der Trefferseite, meist 50): ${esc(sc.capped.slice(0, 40).join(", "))}${sc.capped.length > 40 ? " …" : ""}</div>` : "") + (sc.failed && sc.failed.length ? `<div class="sf-warn">Nicht lesbar (bitte nochmal auflisten): ${esc(sc.failed.slice(0, 40).join(", "))}</div>` : "");
     $("#summary").innerHTML = `<b>${rows.length}</b> Treffer · ${sc.rows.length} Accounts aufgelistet · ${sc.rows.filter((r) => r.gelesen).length} Kontaktdaten gelesen`;
     if (!sc.rows.length) { $("#results").innerHTML = `<div class="sf-empty"><h3>Noch nichts gescannt</h3><p>Links auf <b>1. Accounts auflisten</b> klicken. Danach <b>2. Kontaktdaten lesen</b>.</p></div>`; return; }
     $("#results").innerHTML = `<div class="table-wrap"><table><thead><tr><th>Firma</th><th>PLZ / Ort</th><th>Firmenstatus</th><th>Letzter Kontakt</th><th>Inhaber</th><th></th></tr></thead><tbody>${
@@ -75,7 +77,7 @@
   }
   for (const id of ["#sc-text", "#sc-age", "#sc-nodate", "#sc-onlyread"]) $(id).addEventListener("input", () => { sc.limit = 300; render(); });
 
-  async function loadData() { try { const d = await sfcCall("/scan"); sc.rows = d.rows; sc.lastLoad = Date.now(); render(); } catch (e) { $("#sc-info").textContent = "Programm nicht erreichbar: " + e.message; } }
+  async function loadData() { try { const d = await sfcCall("/scan"); sc.rows = d.rows; sc.capped = d.capped || []; sc.failed = d.failed || []; sc.lastLoad = Date.now(); render(); } catch (e) { $("#sc-info").textContent = "Programm nicht erreichbar: " + e.message; } }
   async function start(path, body) {
     try { await sfcCall(path, "POST", body); sc.running = true; poll(); } catch (e) { $("#sc-info").textContent = "Start nicht möglich: " + e.message; }
   }

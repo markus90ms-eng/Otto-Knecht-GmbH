@@ -15,7 +15,7 @@ import sf
 
 ACC_FILE = sf.OUT / "scan_accounts.json"
 DET_FILE = sf.OUT / "scan_details.json"
-CAP = 1800  # ab so vielen Zeilen kann die Liste abgeschnitten sein -> PLZ-Anfang verfeinern
+CAP = 50  # Die Trefferseite zeigt (nach bisherigen Tests) höchstens 50 Zeilen: ab dort PLZ-Anfang verfeinern
 RESTART_EVERY = 150  # Browser regelmäßig neu starten (lange Läufe)
 
 
@@ -70,6 +70,14 @@ def read_rows(page):
             except Exception:
                 pass
         page.wait_for_timeout(700)
+        if len(seen) == last_n:
+            try:  # manche Listen laden erst über einen Knopf nach
+                btn = page.get_by_role("button", name=re.compile(r"^(Mehr|Weitere|Load more|Show more)", re.I)).first
+                if btn.is_visible(timeout=300):
+                    btn.click(timeout=2000)
+                    page.wait_for_timeout(1500)
+            except Exception:
+                pass
         stable = stable + 1 if len(seen) == last_n else 0
         last_n = len(seen)
         if stable >= 6:
@@ -99,10 +107,11 @@ def fetch_prefix(page, prefix, term_tpl, log):
     page.get_by_role("button", name=re.compile(r"Anwenden", re.I)).first.click(timeout=8000)
     page.wait_for_timeout(6000)
     rows = read_rows(page)
+    label = ""
     try:
         label = next((l for l in page.evaluate(check.LINES_JS) if re.match(r"^[\d.]+\+?\s+Ergebnis", l)), "")
     except Exception:
-        label = ""
+        pass
     log(f"    PLZ {prefix}: {len(rows)} Zeilen gelesen (Salesforce meldet: {label or 'k. A.'})")
     out = []
     for r in rows:
@@ -117,7 +126,7 @@ def fetch_prefix(page, prefix, term_tpl, log):
             "sperre_status": r.get("Account Sperre Status", ""), "vis": r.get("VIS ID", ""), "debitor": r.get("Debitoren-Nr.", ""),
             "url": (sf.sf_url() + href) if href.startswith("/") else href,
         })
-    return out, "ok"
+    return out, ("capped" if label.rstrip().endswith("+") else "ok")
 
 
 def check_no_accounts(page):
@@ -147,9 +156,10 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                     queue = [prefix + str(d) for d in range(10)] + queue
                     continue
                 rows = None
+                state = "ok"
                 for attempt in range(3):
                     try:
-                        rows, _state = fetch_prefix(page, prefix, term_tpl, log)
+                        rows, state = fetch_prefix(page, prefix, term_tpl, log)
                         break
                     except sf.NeedLogin:
                         raise
@@ -169,8 +179,12 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*"):
                         raise RuntimeError("Die ersten PLZ-Anfänge ließen sich nicht lesen: " + (str(last_error).strip().splitlines()[0][:200] if last_error else "unbekannt"))
                     continue
                 ok_count += 1
-                if len(rows) >= CAP and len(prefix) < 5:
-                    log(f"  {prefix}: {len(rows)} Zeilen, verfeinere ...")
+                at_limit = len(rows) >= CAP or state == "capped"
+                if at_limit and len(prefix) == 5:
+                    data["capped"] = sorted(set(data.get("capped", [])) | {prefix})
+                    log(f"  ACHTUNG PLZ {prefix}: {len(rows)} Zeilen, evtl. gibt es mehr Accounts als sichtbar (Grenze der Trefferseite).")
+                if at_limit and len(prefix) < 5:
+                    log(f"  {prefix}: {len(rows)} Zeilen (Grenze erreicht), verfeinere ...")
                     refined.add(prefix)
                     data["refined"] = sorted(refined)
                     queue = [prefix + str(d) for d in range(10)] + queue
@@ -253,4 +267,4 @@ def snapshot():
         d = det.get(k, {})
         rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d),
                      "fehler": d.get("fehler", "") or d.get("hinweis", "") if not d.get("letzter_kontakt") else "", "owner": d.get("owner", "")})
-    return {"rows": rows, "geprueft_plz": data.get("done", []), "anzahl": len(rows), "gelesen": len(det)}
+    return {"rows": rows, "geprueft_plz": data.get("done", []), "anzahl": len(rows), "gelesen": len(det), "capped": data.get("capped", []), "failed": data.get("failed", [])}
