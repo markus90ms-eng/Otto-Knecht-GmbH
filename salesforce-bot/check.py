@@ -508,11 +508,15 @@ def read_detail(ctx, url, log, skip_foreign=False):
         try:  # Reiter 'Details' öffnen: dort stehen 'Zuletzt geändert' und Co.
             page.get_by_role("tab", name=re.compile(r"^Details$", re.I)).first.click(timeout=4000)
             grab()
+            if "opps" not in timeline:
+                quick_links()
         except Exception:
             pass
         try:  # nach unten scrollen, falls Abschnitte erst beim Scrollen geladen werden
             page.keyboard.press("End")
             grab()
+            if "opps" not in timeline:
+                quick_links()
         except Exception:
             pass
         try:
