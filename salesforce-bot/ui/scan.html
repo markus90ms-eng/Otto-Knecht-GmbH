@@ -21,13 +21,14 @@
       <label for="sc-statusmode">Firmenstatus in Schritt 1</label>
       <select id="sc-statusmode"><option value="alle" selected>alle Status durchsuchen (empfohlen)</option><option value="vorgabe">nur Voreinstellung (Potenzial)</option></select>
       <p class="hint">Mit Stadt kommen keine Auslandsadressen mit ähnlicher PLZ (z. B. Zypern 7040). Standard-PLZ: 700–799 und 880–899. Zu große Bereiche verfeinert der Bot automatisch. Nur 5-stellige PLZ werden übernommen.</p>
+      <label class="check"><input type="checkbox" id="sc-auto" checked> danach automatisch Schritt 2 starten (über Nacht)</label>
       <button class="primary" id="sc-list">1. Accounts auflisten</button>
     </section>
     <section>
       <label for="sc-status">2. Firmenstatus enthält (leer = alle)</label>
       <input type="search" id="sc-status" value="" placeholder="leer = Potenzial, Debitor, Non-Debitor, Lead …">
-      <label for="sc-max">Höchstens so viele Accounts lesen</label>
-      <input type="search" id="sc-max" value="1500">
+      <label for="sc-max">Höchstens so viele Accounts lesen (Schritt 2)</label>
+      <input type="search" id="sc-max" value="5000">
       <p class="hint">Pro Account etwa 10 bis 30 Sekunden. Gesperrte Accounts und Auslandsadressen werden übersprungen. Mit einem Wort (z. B. Lead) kannst du auf einen Status eingrenzen.</p>
       <button class="primary" id="sc-det">2. Kontaktdaten lesen</button>
       <button id="sc-stop" style="width:100%;margin-top:8px">Stopp (speichert und beendet)</button>
@@ -106,7 +107,7 @@
       return;
     }
   }
-  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean), city: $("#sc-city").value.trim(), status_mode: $("#sc-statusmode").value });
+  $("#sc-list").onclick = () => start("/scan/list", { prefixes: $("#sc-prefixes").value.split(/[\s,;]+/).filter(Boolean), city: $("#sc-city").value.trim(), status_mode: $("#sc-statusmode").value, auto_details: $("#sc-auto").checked, max: +$("#sc-max").value || 5000, status: $("#sc-status").value.trim() });
   $("#sc-det").onclick = () => start("/scan/details", { max: +$("#sc-max").value || 500, status: $("#sc-status").value.trim() });
   $("#sc-stop").onclick = async () => { try { await sfcCall("/stop", "POST"); $("#sc-info").textContent = "Stopp angefordert, der Bot speichert und beendet gleich."; } catch (e) { $("#sc-info").textContent = e.message; } };
   $("#sc-csv").onclick = () => {

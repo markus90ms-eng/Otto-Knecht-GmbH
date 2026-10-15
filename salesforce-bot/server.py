@@ -18,7 +18,7 @@ import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-14-31 (Suche über Trefferseite, Reiter Details und Aktivität)"
+VERSION = "2026-10-15-32 (Suche über Trefferseite, Reiter Details und Aktivität)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
@@ -72,7 +72,12 @@ def run_job(kind, days, headed, liste, leads=None):
     try:
         if kind == "scan_list":
             n = scan.list_accounts(leads["prefixes"], log, stop_event, leads.get("term") or "{p}*", leads.get("city", ""), leads.get("status_mode", "alle"))
-            job.update(state="done", message=f"{n} Accounts aufgelistet." + (" (angehalten)" if stop_event.is_set() else ""))
+            msg = f"{n} Accounts aufgelistet." + (" (angehalten)" if stop_event.is_set() else "")
+            if leads.get("auto") and not stop_event.is_set():
+                log("Schritt 1 fertig. Schritt 2 (Kontaktdaten lesen) startet automatisch ...")
+                n2 = scan.read_details(leads["auto"]["max"], leads["auto"]["status"], log, stop_event)
+                msg += f" Kontaktdaten für {n2} Accounts gelesen." + (" (angehalten)" if stop_event.is_set() else "")
+            job.update(state="done", message=msg)
         elif kind == "scan_details":
             n = scan.read_details(leads["max"], leads["status"], log, stop_event)
             job.update(state="done", message=f"Kontaktdaten für {n} Accounts gelesen." + (" (angehalten)" if stop_event.is_set() else ""))
@@ -188,6 +193,10 @@ class Handler(BaseHTTPRequestHandler):
                     if not re.fullmatch(r"[\w .\-/()äöüÄÖÜß]*", city):
                         return self._send(400, {"error": "ungültiger Stadtname"})
                     leads = {"prefixes": prefixes, "term": term if "{p}" in term else "{p}*", "city": city, "status_mode": "vorgabe" if body.get("status_mode") == "vorgabe" else "alle"}
+                    if body.get("auto_details"):
+                        st = str(body.get("status") or "")[:80]
+                        re.compile(st or ".")
+                        leads["auto"] = {"max": max(1, min(int(body.get("max", 5000)), 50_000)), "status": st}
                 else:
                     status = str(body.get("status") or "")[:80]
                     re.compile(status or ".")

@@ -280,7 +280,7 @@ def interpret(row):
         return "vergeben", "GESPERRT, nicht kontaktieren. " + facts
     if re.search(r"\bex\b|ex-|inaktiv|ehemal", firmenstatus, re.I) and not re.search(r"^kunde", firmenstatus, re.I):
         return "ruhend", "Ehemaliger oder inaktiver Kunde, nicht gesperrt. " + facts
-    if re.search(r"kunde|aktiv", firmenstatus, re.I):
+    if re.search(r"kunde|aktiv|debitor", firmenstatus, re.I):
         return "kunde", "Bestandskunde, nicht gesperrt. " + facts
     if re.search(r"potenzial|interessent|lead|neu", firmenstatus, re.I):
         return "potenzial", "Account vorhanden (Potenzial), nicht gesperrt. " + facts
