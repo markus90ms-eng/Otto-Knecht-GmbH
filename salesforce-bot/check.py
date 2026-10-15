@@ -314,11 +314,17 @@ MONTH_RX = re.compile(r"^(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|
 ITEM_RX = re.compile(r"^(?:\d{1,2}:\d{2}\s*\|\s*)?(\d{1,2})\.(\d{1,2})\.?(\d{4})?$")
 
 
+END_RX = re.compile(r"^(Keine weiter|Alle Aktivit(ä|ae)ten anzeigen|Mehr laden|Weitere Aktivit)", re.I)
+
+
 def parse_timeline(lines):
     """Aktivitätsverlauf (Zeilen) -> (neuestes vergangenes Datum als ISO oder '', Anzahl erkannter Einträge).
-    Überschriften wie 'September • 2026' liefern das Jahr, die Einträge 'dd.mm'. 'Ausstehend und überfällig' wird übersprungen."""
+    Überschriften wie 'September • 2026' liefern das Jahr, die Einträge 'dd.mm' oder 'dd.mm.yyyy' (Jahr muss zur Überschrift passen).
+    'Ausstehend und überfällig' wird übersprungen, nach dem Ende des Verlaufs ('Keine weiteren Aktivitäten ...') wird nichts mehr gelesen
+    (rechts daneben stehen Formulare mit dem heutigen Datum)."""
     year = None
     found = []
+    today = date.today()
     for ln in lines:
         m = MONTH_RX.match(ln)
         if m:
@@ -327,12 +333,18 @@ def parse_timeline(lines):
         if re.match(r"^(Ausstehend|Anstehend|Nächste|Upcoming|Overdue)", ln, re.I):
             year = None
             continue
+        if year and END_RX.match(ln):
+            break
         d = ITEM_RX.match(ln)
-        if d and (year or d.group(3)):
+        if d and year:
+            if d.group(3) and int(d.group(3)) != year:
+                continue
             try:
-                found.append(date(int(d.group(3)) if d.group(3) else year, int(d.group(2)), int(d.group(1))))
+                dt = date(year, int(d.group(2)), int(d.group(1)))
             except ValueError:
-                pass
+                continue
+            if dt <= today:
+                found.append(dt)
     return (max(found).isoformat() if found else ""), len(found)
 
 
@@ -350,6 +362,11 @@ def parse_pending(lines):
             continue
         if inside and MONTH_RX.match(ln):
             break
+        if inside and re.match(r"^Keine Aktivit", ln, re.I):  # Abschnitt vorhanden, aber leer
+            if out and out[-1] == "?":
+                out.pop()
+            inside = False
+            continue
         if inside:
             d = ITEM_RX.match(ln)
             if d:
@@ -568,6 +585,7 @@ def read_detail(ctx, url, log, skip_foreign=False):
         "land_de": (bool(re.search(r"deutschland|germany", pick(r"rechnungsanschrift|billing address"), re.I)) if pick(r"rechnungsanschrift|billing address") else None),
         "last_activity": act,
         "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
+        "quellen": {"feld": act_field, "verlauf": timeline.get("datum", ""), "geaendert": find_date(mod_raw)},
         "opps": timeline.get("opps"), "vg": timeline.get("vg"), "kontakte": timeline.get("kontakte"),
         "offen": timeline.get("offen", []),
         "offen_blockt": timeline.get("offen_blockt"),

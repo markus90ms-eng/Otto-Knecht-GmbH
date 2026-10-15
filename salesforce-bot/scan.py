@@ -357,7 +357,7 @@ def read_details(max_n, status_rx, log, stop):
     det = load(DET_FILE, {})
     rx = re.compile(status_rx, re.I) if status_rx else None
     todo = [a for k, a in acc.items() if a.get("url") and not a.get("sperre") and not (a.get("sperre_status") or "").strip()
-            and (rx is None or rx.search(a.get("status", ""))) and (k not in det or det[k].get("fehler") or det[k].get("v", 1) < 4
+            and (rx is None or rx.search(a.get("status", ""))) and (k not in det or det[k].get("fehler") or det[k].get("v", 1) < 5
                                                   or (not det[k].get("letzter_kontakt") and det[k].get("land_de") is not False and det[k].get("versuche", 0) < 3))]
     todo = todo[:max_n]
     log(f"{len(todo)} Accounts werden gelesen (schon fertig: {len(det)}).")
@@ -371,7 +371,7 @@ def read_details(max_n, status_rx, log, stop):
                 for versuch in range(2):
                     try:
                         d = check.read_detail(ctx, a["url"], lambda m: None, skip_foreign=True)
-                        res = {**contact_info(d), "v": 4, "opps": d.get("opps"), "vg": d.get("vg"), "kontakte": d.get("kontakte"), "offen": d.get("offen", []), "offen_blockt": d.get("offen_blockt"), "offen_kommentar": d.get("offen_kommentar", ""), "offen_hinweis": d.get("offen_hinweis", ""), "owner": d.get("owner", ""), "land_de": d.get("land_de"), "gelesen": datetime.now().isoformat(timespec="seconds")}
+                        res = {**contact_info(d), "v": 5, "quellen": d.get("quellen"), "opps": d.get("opps"), "vg": d.get("vg"), "kontakte": d.get("kontakte"), "offen": d.get("offen", []), "offen_blockt": d.get("offen_blockt"), "offen_kommentar": d.get("offen_kommentar", ""), "offen_hinweis": d.get("offen_hinweis", ""), "owner": d.get("owner", ""), "land_de": d.get("land_de"), "gelesen": datetime.now().isoformat(timespec="seconds")}
                         av = d.get("aktivitaetsverlauf", {})
                         if d.get("land_de") is False:
                             res["hinweis"] = "Ausland: " + (d.get("adresse") or "")[:80]
@@ -414,6 +414,6 @@ def snapshot():
     rows = []
     for k, a in data["accounts"].items():
         d = det.get(k, {})
-        rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d), "opps": d.get("opps"), "vg": d.get("vg"), "kontakte": d.get("kontakte"), "offen": d.get("offen", []), "offen_blockt": d.get("offen_blockt"), "offen_kommentar": d.get("offen_kommentar", ""), "offen_hinweis": d.get("offen_hinweis", ""), "land_de": d.get("land_de"),
+        rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d), "quellen": d.get("quellen"), "opps": d.get("opps"), "vg": d.get("vg"), "kontakte": d.get("kontakte"), "offen": d.get("offen", []), "offen_blockt": d.get("offen_blockt"), "offen_kommentar": d.get("offen_kommentar", ""), "offen_hinweis": d.get("offen_hinweis", ""), "land_de": d.get("land_de"),
                      "fehler": d.get("fehler", "") or d.get("hinweis", "") if not d.get("letzter_kontakt") else "", "owner": d.get("owner", "")})
     return {"rows": rows, "geprueft_plz": data.get("done", []), "anzahl": len(rows), "gelesen": len(det), "capped": data.get("capped", []), "failed": data.get("failed", [])}
