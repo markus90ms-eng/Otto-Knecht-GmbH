@@ -503,7 +503,14 @@ def read_detail(ctx, url, log, skip_foreign=False):
         except Exception:
             pass
         def read_timeline():
-            page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first.click(timeout=4000)
+            tab = page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first
+            try:
+                tab.click(timeout=10_000)
+            except Exception:  # Seite war noch nicht fertig (Reiter fehlt): neu laden und noch einmal versuchen
+                page.goto(url)
+                page.wait_for_timeout(6000)
+                tab = page.get_by_role("tab", name=re.compile(r"^Aktivit(ä|ae)t$", re.I)).first
+                tab.click(timeout=15_000)
             page.wait_for_timeout(3500)
             lines = page.evaluate(LINES_JS)
             datum, anzahl = parse_timeline(lines)
