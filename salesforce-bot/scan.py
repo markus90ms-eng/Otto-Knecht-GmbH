@@ -170,6 +170,7 @@ def fetch_prefix(page, prefix, term_tpl, log, city="", status=None):
 NAME_CHARS = list("abcdefghijklmnopqrstuvwxyzäöü0123456789") + list("-_(\"'&.+#/@")
 NEXT_CHARS = list("abcdefghijklmnopqrstuvwxyzäöüß0123456789 -.&")
 MAX_DEPTH = 4
+SATURATION = 45  # 'enthält'-Aufteilung: so viele Teilabfragen ohne neuen Account = fertig
 
 
 def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city="", status=None):
@@ -180,7 +181,7 @@ def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city=""
     found, complete, semantics = {}, True, None
     queue = list(chars)
     tried = set()
-    asked = 0
+    asked = since_new = 0
     while queue and not stop.is_set():
         pre = queue.pop(0)
         if pre in tried:
@@ -196,8 +197,13 @@ def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city=""
             semantics = "prefix" if ok >= max(1, int(0.8 * len(rows))) else "contains"
             if semantics == "contains":
                 log(f"    {plz}: Feld {field_rx} filtert nach 'enthält' ({ok}/{len(rows)}), teile nach Buchstabenfolgen auf.")
+        before = len(found)
         for r in rows:
             found[r["id"] or r["url"] or r["name"] + r["plz"]] = r
+        since_new = 0 if len(found) > before else since_new + 1
+        if semantics == "contains" and since_new >= SATURATION and asked > len(chars):
+            log(f"    {plz}: {SATURATION} Teilabfragen ohne neuen Account, Aufteilen gilt als gesättigt ({len(found)} Accounts).")
+            return list(found.values()), True
         if len(rows) >= CAP:
             if len(pre) < MAX_DEPTH:
                 if semantics == "contains":  # 'enthält': Folge dahinter und davor abfragen, Doppelte fallen über found weg
