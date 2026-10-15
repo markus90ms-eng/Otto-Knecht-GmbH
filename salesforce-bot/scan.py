@@ -179,9 +179,13 @@ def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city=""
         return [], True
     found, complete, semantics = {}, True, None
     queue = list(chars)
+    tried = set()
     asked = 0
     while queue and not stop.is_set():
         pre = queue.pop(0)
+        if pre in tried:
+            continue
+        tried.add(pre)
         set_filter(page, field_rx, pre)
         apply_filters(page)
         rows = [x for x in (parse_row(r, plz) for r in read_rows(page)) if x]
@@ -191,13 +195,16 @@ def split_capped(page, plz, term_tpl, field_rx, chars, nexts, log, stop, city=""
             ok = sum(1 for r in rows if key_of(r).lower().startswith(pre.lower()))
             semantics = "prefix" if ok >= max(1, int(0.8 * len(rows))) else "contains"
             if semantics == "contains":
-                log(f"    {plz}: Feld {field_rx} filtert nicht nach 'beginnt mit' ({ok}/{len(rows)}), Aufteilen so nicht möglich.")
-                return None, False
+                log(f"    {plz}: Feld {field_rx} filtert nach 'enthält' ({ok}/{len(rows)}), teile nach Buchstabenfolgen auf.")
         for r in rows:
             found[r["id"] or r["url"] or r["name"] + r["plz"]] = r
         if len(rows) >= CAP:
             if len(pre) < MAX_DEPTH:
-                queue = [pre + c for c in nexts] + queue
+                if semantics == "contains":  # 'enthält': Folge dahinter und davor abfragen, Doppelte fallen über found weg
+                    ext = [pre + c for c in nexts] + [c + pre for c in nexts]
+                    queue = [e for e in ext if e not in tried] + queue
+                else:
+                    queue = [pre + c for c in nexts] + queue
             else:
                 complete = False
         if asked % 10 == 0:
@@ -281,7 +288,7 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*", city="", status_mode="al
                     if at_limit and len(prefix) == 5:
                         log(f"  PLZ {prefix}: {len(rows)} Zeilen (Grenze), teile nach Accountnamen auf ...")
                         more, complete = None, False
-                        for field_rx, chars, nexts in ((r"^Accountname$", NAME_CHARS, NEXT_CHARS), (r"^VIS ID$", list("0123456789"), list("0123456789"))):
+                        for field_rx, chars, nexts in ((r"^Accountname$", NAME_CHARS, NEXT_CHARS),):
                             try:
                                 more, complete = split_capped(page, prefix, term_tpl, field_rx, chars, nexts, log, stop, city, st)
                             except sf.NeedLogin:
