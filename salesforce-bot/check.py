@@ -307,7 +307,7 @@ ERROR_RX = re.compile(r"Unterbrechung|CSS Error|Wir bitten", re.I)
 MONTHS = {"januar": 1, "februar": 2, "märz": 3, "maerz": 3, "april": 4, "mai": 5, "juni": 6, "juli": 7, "august": 8,
           "september": 9, "oktober": 10, "november": 11, "dezember": 12}
 MONTH_RX = re.compile(r"^(Januar|Februar|März|Maerz|April|Mai|Juni|Juli|August|September|Oktober|November|Dezember)\s*[•·\-–]\s*(\d{4})", re.I)
-ITEM_RX = re.compile(r"^(?:\d{1,2}:\d{2}\s*\|\s*)?(\d{1,2})\.(\d{1,2})\.?$")
+ITEM_RX = re.compile(r"^(?:\d{1,2}:\d{2}\s*\|\s*)?(\d{1,2})\.(\d{1,2})\.?(\d{4})?$")
 
 
 def parse_timeline(lines):
@@ -324,12 +324,35 @@ def parse_timeline(lines):
             year = None
             continue
         d = ITEM_RX.match(ln)
-        if d and year:
+        if d and (year or d.group(3)):
             try:
-                found.append(date(year, int(d.group(2)), int(d.group(1))))
+                found.append(date(int(d.group(3)) if d.group(3) else year, int(d.group(2)), int(d.group(1))))
             except ValueError:
                 pass
     return (max(found).isoformat() if found else ""), len(found)
+
+
+PENDING_RX = re.compile(r"^(Ausstehend|Anstehend|Nächste|Upcoming)", re.I)
+
+
+def parse_pending(lines):
+    """Offene Aufgaben/Termine ('Ausstehend und überfällig' im Aktivitätsverlauf) -> Liste der Daten (z. B. ['07.12']).
+    Gibt es den Abschnitt, aber kein lesbares Datum, steht '?' in der Liste. Ohne Abschnitt: []."""
+    out, inside = [], False
+    for ln in lines:
+        if PENDING_RX.match(ln):
+            inside = True
+            out.append("?")
+            continue
+        if inside and MONTH_RX.match(ln):
+            break
+        if inside:
+            d = ITEM_RX.match(ln)
+            if d:
+                if out and out[-1] == "?":
+                    out.pop()
+                out.append("%02d.%02d.%s" % (int(d.group(1)), int(d.group(2)), d.group(3) or ""))
+    return out
 
 
 DATE_RX = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})")
@@ -426,6 +449,7 @@ def read_detail(ctx, url, log, skip_foreign=False):
                 page.wait_for_timeout(5000)
                 lines, datum, anzahl = read_timeline()
             timeline["datum"], timeline["anzahl"] = datum, anzahl
+            timeline["offen"] = parse_pending(lines)
             if not datum:
                 timeline["zeilen"] = lines[:25]
                 try:  # Rückfall: Liste 'Aktivitätsverlauf' statt Reiter
@@ -453,6 +477,7 @@ def read_detail(ctx, url, log, skip_foreign=False):
         "land_de": (bool(re.search(r"deutschland|germany", pick(r"rechnungsanschrift|billing address"), re.I)) if pick(r"rechnungsanschrift|billing address") else None),
         "last_activity": act,
         "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
+        "offen": timeline.get("offen", []),
         "last_activity_raw": act_raw[:60],
         "last_modified": find_date(mod_raw),
         "last_modified_raw": mod_raw.replace("\n", " ")[:80],
@@ -532,6 +557,9 @@ def check_one(page, lead, log):
     if best["art"] != "aehnlich":
         if status == "vergeben":
             frei = False
+        elif best.get("offen"):
+            frei = False
+            note += " · Offene Aufgabe/Termin: " + ", ".join(best["offen"]) + " (nicht frei)"
         elif best.get("tage_seit_kontakt") is not None:
             frei = best["tage_seit_kontakt"] > 90
             note += " · FREI (seit über 3 Monaten kein Kontakt)" if frei else " · Kontakt in den letzten 3 Monaten"
