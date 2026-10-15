@@ -469,9 +469,21 @@ def read_detail(ctx, url, log, skip_foreign=False):
         except Exception as e:
             timeline["fehler"] = "Felder lesen: " + (str(e).strip().splitlines()[0][:150] if str(e).strip() else type(e).__name__)
 
+    def quick_links():
+        """'Schnell-Links für Themenlisten': Anzahl Opportunities, Vertriebsgesellschaften und Kontakte."""
+        try:
+            txt = " ".join(page.evaluate(LINES_JS))
+            for key, rx in (("opps", r"Opportunities\s*\((\d+)\)"), ("vg", r"Vertriebsgesellschaften\s*\((\d+)\)"), ("kontakte", r"Kontakte\s*\((\d+)\)")):
+                m = re.search(rx, txt)
+                if m:
+                    timeline[key] = int(m.group(1))
+        except Exception:
+            pass
+
     try:
         page.goto(url)
         grab()
+        quick_links()
         if skip_foreign:
             addr = next((v for k, v in fields.items() if re.search(r"rechnungsanschrift|billing address", k, re.I) and v), "")
             if addr and not re.search(r"deutschland|germany", addr, re.I):
@@ -549,6 +561,7 @@ def read_detail(ctx, url, log, skip_foreign=False):
         "land_de": (bool(re.search(r"deutschland|germany", pick(r"rechnungsanschrift|billing address"), re.I)) if pick(r"rechnungsanschrift|billing address") else None),
         "last_activity": act,
         "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
+        "opps": timeline.get("opps"), "vg": timeline.get("vg"), "kontakte": timeline.get("kontakte"),
         "offen": timeline.get("offen", []),
         "offen_blockt": timeline.get("offen_blockt"),
         "offen_kommentar": timeline.get("offen_kommentar", ""),
