@@ -255,7 +255,7 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*", city="", status_mode="al
                 empty_run = 0
                 while queue and not stop.is_set():
                     prefix = queue.pop(0)
-                    if kk(prefix) in done:
+                    if kk(prefix) in done and kk(prefix) not in data.get("capped", []):  # Grenzfälle werden erneut aufgeteilt
                         continue
                     if kk(prefix) in refined:  # früher schon verfeinert: direkt die Unterbereiche abarbeiten
                         queue = [prefix + str(d) for d in range(10)] + queue
@@ -304,6 +304,8 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*", city="", status_mode="al
                                 by_key[r["id"] or r["url"] or r["name"] + r["plz"]] = r
                             rows = list(by_key.values())
                             log(f"  PLZ {prefix}: nach Aufteilen {len(rows)} Accounts" + ("" if complete else " (evtl. unvollständig)"))
+                        if more is not None and complete:
+                            data["capped"] = sorted(set(data.get("capped", [])) - {kk(prefix)})
                         if more is None or not complete:
                             data["capped"] = sorted(set(data.get("capped", [])) | {kk(prefix)})
                             log(f"  ACHTUNG PLZ {prefix}: evtl. gibt es mehr Accounts als gelesen (Grenze der Trefferseite).")
