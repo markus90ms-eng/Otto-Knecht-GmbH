@@ -118,7 +118,7 @@
     const cols = [["Firma", "name"], ["PLZ", "plz"], ["Ort", "ort"], ["Straße", "strasse"], ["Firmenstatus", "status"], ["Frei", "frei"], ["Letzter Kontakt", "letzter_kontakt"], ["Quelle", "quelle"], ["Inhaber", "owner"], ["VIS ID", "vis"], ["Link", "url"]];
     download(`salesforce_scan_${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + [cols.map(([h]) => q(h)).join(";"), ...rows.map((r) => cols.map(([, k]) => q(r[k])).join(";"))].join("\r\n"), "text/csv;charset=utf-8");
   };
-  sfcCall("/status").then(async (s) => { $("#ver").textContent = "Programmversion: " + (s.version || "alt"); await loadData(); if (s.state === "running") { sc.running = true; poll(); } }).catch(() => { $("#sc-info").textContent = "Programm nicht erreichbar. Läuft Salesforce_starten.bat?"; });
+  sfcCall("/status").then(async (s) => { $("#ver").textContent = "Programmversion: " + (s.version || "alt"); await loadData(); $("#sc-log").textContent = (s.log || []).slice(-12).join("\n"); if (s.state === "running") { sc.running = true; poll(); } else $("#sc-info").textContent = s.state === "idle" ? "Es läuft gerade nichts." : (s.message || s.state); }).catch(() => { $("#sc-info").textContent = "Programm nicht erreichbar. Läuft Salesforce_starten.bat?"; });
   render();
 </script>
 </body>

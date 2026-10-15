@@ -18,7 +18,7 @@ import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-15-35 (Aufteilen stoppt bei Sättigung)"
+VERSION = "2026-10-15-36 (Scan-Seite zeigt Zustand und Log auch im Leerlauf)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
