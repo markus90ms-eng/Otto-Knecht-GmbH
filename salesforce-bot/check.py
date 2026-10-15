@@ -66,6 +66,10 @@ LINES_JS = """() => {
   return out.join('').split('\\n').map((x) => x.replace(/\\s+/g, ' ').trim()).filter(Boolean);
 }"""
 
+LINES_LINKS_JS = LINES_JS.replace(
+    "const block = !INLINE.test(n.tagName);",
+    "if (n.tagName === 'A' && n.getAttribute('href')) out.push('\\n§LINK§' + n.getAttribute('href') + '\\n');\n    const block = !INLINE.test(n.tagName);")
+
 PAGE_TEXT_JS = """() => {
   const walk = (n) => {
     if (n.nodeType === 3) return n.textContent;
@@ -355,6 +359,59 @@ def parse_pending(lines):
     return out
 
 
+TASK_HREF_RX = re.compile(r"/lightning/r/(?:Task|Event)/[A-Za-z0-9]{15,18}")
+
+
+def parse_task_links(lines):
+    """Aus den Zeilen mit §LINK§-Markern: (Links der offenen Aufgaben/Termine, Link des neuesten vergangenen Eintrags)."""
+    pending, past, state = [], "", None
+    for ln in lines:
+        if PENDING_RX.match(ln):
+            state = "pending"
+            continue
+        if MONTH_RX.match(ln):
+            state = state if state == "past" else "past"
+            continue
+        if ln.startswith("§LINK§"):
+            h = ln[len("§LINK§"):]
+            if not TASK_HREF_RX.search(h):
+                continue
+            if state == "pending" and h not in pending:
+                pending.append(h)
+            elif state == "past" and not past:
+                past = h
+    return pending, past
+
+
+COMMENT_RX = re.compile(r"^(kommentar|comment|beschreibung|description)$", re.I)
+
+
+def read_task(ctx, href):
+    """Aufgaben-/Terminseite öffnen: Kommentar, Fälligkeit, Status. Fehler -> 'fehler' gesetzt."""
+    page = ctx.new_page()
+    out = {}
+    try:
+        page.goto(href if href.startswith("http") else sf.sf_url() + href)
+        try:
+            page.wait_for_selector("records-record-layout-item, records-highlights-details-item", timeout=12_000)
+        except Exception:
+            pass
+        page.wait_for_timeout(1500)
+        fields = page.evaluate(DETAIL_JS)
+        if not fields:
+            out["fehler"] = "keine Felder gelesen"
+        kom = next((v for k, v in fields.items() if COMMENT_RX.match(k.strip())), None)
+        out["kommentar"] = (kom or "").strip()
+        out["kommentar_gefunden"] = kom is not None
+        out["faellig"] = next((v for k, v in fields.items() if re.search(r"fälligkeit|faellig|due date|startdatum", k, re.I) and v), "")
+        out["status"] = next((v for k, v in fields.items() if re.search(r"^status", k, re.I) and v), "")
+    except Exception as e:
+        out["fehler"] = str(e).strip().splitlines()[0][:120] if str(e).strip() else type(e).__name__
+    finally:
+        page.close()
+    return out
+
+
 DATE_RX = re.compile(r"(\d{1,2}\.\d{1,2}\.\d{2,4}|\d{4}-\d{2}-\d{2})")
 
 
@@ -450,6 +507,21 @@ def read_detail(ctx, url, log, skip_foreign=False):
                 lines, datum, anzahl = read_timeline()
             timeline["datum"], timeline["anzahl"] = datum, anzahl
             timeline["offen"] = parse_pending(lines)
+            if timeline["offen"]:
+                try:  # Kommentare der offenen Aufgabe(n) und des Eintrags davor lesen: nur mit Kommentar gilt der Account als belegt
+                    lines2 = page.evaluate(LINES_LINKS_JS)
+                    pend, past = parse_task_links(lines2)
+                    infos = [read_task(ctx, h) for h in pend[:3]]
+                    prev = read_task(ctx, past) if past else None
+                    comments = [i.get("kommentar", "") for i in infos] + ([prev.get("kommentar", "")] if prev else [])
+                    unsicher = (not pend) or any(i.get("fehler") or not i.get("kommentar_gefunden") for i in infos + ([prev] if prev else []))
+                    timeline["offen_kommentar"] = next((c for c in comments if c), "")[:300]
+                    timeline["offen_blockt"] = bool(timeline["offen_kommentar"]) or unsicher
+                    timeline["offen_hinweis"] = ("Kommentar steht im offenen Eintrag oder im Eintrag davor" if timeline["offen_kommentar"]
+                                                 else "Kommentare nicht lesbar, sicherheitshalber nicht frei" if unsicher else "keine Kommentare")
+                except Exception as e:
+                    timeline["offen_blockt"] = True
+                    timeline["offen_hinweis"] = "Kommentare nicht lesbar: " + (str(e).strip().splitlines()[0][:100] if str(e).strip() else type(e).__name__)
             if not datum:
                 timeline["zeilen"] = lines[:25]
                 try:  # Rückfall: Liste 'Aktivitätsverlauf' statt Reiter
@@ -478,6 +550,9 @@ def read_detail(ctx, url, log, skip_foreign=False):
         "last_activity": act,
         "aktivitaetsverlauf": {k: v for k, v in timeline.items()},
         "offen": timeline.get("offen", []),
+        "offen_blockt": timeline.get("offen_blockt"),
+        "offen_kommentar": timeline.get("offen_kommentar", ""),
+        "offen_hinweis": timeline.get("offen_hinweis", ""),
         "last_activity_raw": act_raw[:60],
         "last_modified": find_date(mod_raw),
         "last_modified_raw": mod_raw.replace("\n", " ")[:80],
@@ -557,9 +632,9 @@ def check_one(page, lead, log):
     if best["art"] != "aehnlich":
         if status == "vergeben":
             frei = False
-        elif best.get("offen"):
+        elif best.get("offen") and best.get("offen_blockt") is not False:
             frei = False
-            note += " · Offene Aufgabe/Termin: " + ", ".join(best["offen"]) + " (nicht frei)"
+            note += " · Offene Aufgabe/Termin: " + ", ".join(best["offen"]) + " (nicht frei" + (": " + best["offen_kommentar"][:120] if best.get("offen_kommentar") else "") + ")"
         elif best.get("tage_seit_kontakt") is not None:
             frei = best["tage_seit_kontakt"] > 90
             note += " · FREI (seit über 3 Monaten kein Kontakt)" if frei else " · Kontakt in den letzten 3 Monaten"
