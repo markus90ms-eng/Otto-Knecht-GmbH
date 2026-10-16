@@ -226,13 +226,18 @@ def check_no_accounts(page):
         return False
 
 
-def status_values(page, prefix, term_tpl, log, city, mode):
+def status_values(page, prefixes, term_tpl, log, city, mode):
     """Welche Firmenstatus-Werte sollen durchsucht werden? [None] = Voreinstellung der Seite (nur 'Potenzial').
-    Bei mode 'alle': Auswahlfeld öffnen; gibt es eine 'Alle'-Option, wird sie benutzt, sonst werden alle Optionen einzeln durchsucht."""
+    Bei mode 'alle': Auswahlfeld öffnen; gibt es eine 'Alle'-Option, wird sie benutzt, sonst werden alle Optionen einzeln durchsucht.
+    Der erste PLZ-Anfang ohne Treffer (z. B. 760 gibt es nicht) wird übersprungen, der nächste probiert."""
     if mode != "alle":
         return [None]
-    if open_scoped(page, prefix, term_tpl, log, city) == "leer":
-        raise RuntimeError("Der erste PLZ-Anfang %s liefert keine Treffer: Firmenstatus-Optionen lassen sich so nicht lesen. Bitte einen PLZ-Anfang mit Accounts wählen." % prefix)
+    for n, prefix in enumerate(prefixes[:25]):
+        if open_scoped(page, prefix, term_tpl, log, city) != "leer":
+            break
+        log(f"PLZ-Anfang {prefix} liefert keine Treffer, versuche den nächsten, um die Firmenstatus-Optionen zu lesen ...")
+    else:
+        raise RuntimeError("Die ersten PLZ-Anfänge (%s ...) liefern keine Treffer: Firmenstatus-Optionen lassen sich so nicht lesen. Bitte einen PLZ-Anfang mit Accounts wählen." % ", ".join(prefixes[:3]))
     info = check.combobox_info(page, "Firmenstatus")
     opts = [o["text"] for o in info.get("optionen", []) if o.get("text")]
     log(f"Firmenstatus-Auswahl: aktuell „{info.get('aktuell', '?')}“, Optionen: {opts or 'nicht lesbar'}")
@@ -253,7 +258,7 @@ def list_accounts(prefixes, log, stop, term_tpl="{p}*", city="", status_mode="al
         browser, ctx = sf._session(p, False)
         try:
             page = ctx.new_page()
-            statuses = status_values(page, prefixes[0], term_tpl, log, city, status_mode)
+            statuses = status_values(page, prefixes, term_tpl, log, city, status_mode)
             log(f"Durchsucht werden Firmenstatus: {statuses if statuses != [None] else 'Voreinstellung der Seite'}")
             for st in statuses:
                 kk = lambda pf, st=st: "|".join([x for x in (city.lower(), (st or "").lower()) if x] + [pf])  # Stadt/Status gehören zum Schlüssel

@@ -18,7 +18,7 @@ import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-15-43 (Opportunities: mehrfach versuchen)"
+VERSION = "2026-10-16-44 (leere PLZ-Anfänge am Anfang überspringen)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
