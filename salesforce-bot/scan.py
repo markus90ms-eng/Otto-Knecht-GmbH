@@ -100,7 +100,7 @@ def parse_row(r, prefix):
 
 
 def open_scoped(page, prefix, term_tpl, log, city="", status=None):
-    """Suche öffnen, zur Account-Trefferseite wechseln, PLZ-Filter setzen. Gibt 'ok' oder 'leer' zurück."""
+    """Suche öffnen, zur Account-Trefferseite wechseln, PLZ-Filter setzen. Gibt 'ok', 'inline' (wenige Treffer, kein Filter) oder 'leer' zurück."""
     term = term_tpl.format(p=prefix)
     url = check.search_url(term)
     page.goto("about:blank")
@@ -114,6 +114,11 @@ def open_scoped(page, prefix, term_tpl, log, city="", status=None):
     except Exception:
         if re.search(r"Keine Ergebnisse|keine Treffer|No results", page.evaluate(check.PAGE_TEXT_JS), re.I) or check_no_accounts(page):
             return "leer"
+        # Wenige Treffer: Salesforce zeigt die Accounts gleich auf der ersten Trefferseite, ohne 'Mehr anzeigen'.
+        # Dann gibt es keinen Filter, die Tabelle wird direkt gelesen (es sind nur wenige Zeilen).
+        if page.evaluate(check.ACCOUNTS_JS) is not None:
+            log(f"    {prefix}: wenige Treffer, Accounts stehen direkt auf der ersten Trefferseite.")
+            return "inline"
         raise RuntimeError("Wechsel zur Account-Trefferseite nicht möglich (Seite: %s)" % page.url.split("#")[0])
     page.wait_for_timeout(6000)
     set_filter(page, r"^PLZ", prefix)
@@ -164,6 +169,8 @@ def fetch_prefix(page, prefix, term_tpl, log, city="", status=None):
     label = result_label(page)
     log(f"    PLZ {prefix}: {len(rows)} Zeilen gelesen (Salesforce meldet: {label or 'k. A.'})")
     out = [x for x in (parse_row(r, prefix) for r in rows) if x]
+    if rows and not out:
+        log(f"    PLZ {prefix}: {len(rows)} Zeilen gelesen, aber keine passt (PLZ-Spalte fehlt oder andere PLZ). Spalten: {[k for k in rows[0] if not k.startswith('__')][:8]}")
     return out, ("capped" if label.rstrip().endswith("+") else "ok")
 
 
@@ -233,7 +240,7 @@ def status_values(page, prefixes, term_tpl, log, city, mode):
     if mode != "alle":
         return [None]
     for n, prefix in enumerate(prefixes[:25]):
-        if open_scoped(page, prefix, term_tpl, log, city) != "leer":
+        if open_scoped(page, prefix, term_tpl, log, city) == "ok":
             break
         log(f"PLZ-Anfang {prefix} liefert keine Treffer, versuche den nächsten, um die Firmenstatus-Optionen zu lesen ...")
     else:
