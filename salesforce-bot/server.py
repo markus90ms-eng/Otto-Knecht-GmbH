@@ -18,7 +18,7 @@ import scan
 import sf
 
 PORT = 8766
-VERSION = "2026-10-16-45 (wenige Treffer direkt auf der Trefferseite lesen)"
+VERSION = "2026-10-17-46 (Schritt 2 versucht Fehlgeschlagene erneut)"
 PAGE = f"http://127.0.0.1:{PORT}/"
 LEADGEN_PAGE = "https://markus90ms-eng.github.io/Leadgenerator/#salesforce"
 UI_DIR = sf.BASE / "ui"
@@ -79,7 +79,7 @@ def run_job(kind, days, headed, liste, leads=None):
                 msg += f" Kontaktdaten für {n2} Accounts gelesen." + (" (angehalten)" if stop_event.is_set() else "")
             job.update(state="done", message=msg)
         elif kind == "scan_details":
-            n = scan.read_details(leads["max"], leads["status"], log, stop_event)
+            n = scan.read_details(leads["max"], leads["status"], log, stop_event, retry=True)
             job.update(state="done", message=f"Kontaktdaten für {n} Accounts gelesen." + (" (angehalten)" if stop_event.is_set() else ""))
         elif kind == "diagnose":
             diag.clear()

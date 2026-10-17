@@ -363,14 +363,14 @@ def contact_info(det):
     return {"letzter_kontakt": d, "quelle": q}
 
 
-def read_details(max_n, status_rx, log, stop):
+def read_details(max_n, status_rx, log, stop, retry=False):
     """Phase 2. Öffnet die Account-Seiten der noch nicht gelesenen Accounts mit passendem Firmenstatus (nicht gesperrt)."""
     acc = load(ACC_FILE, {"accounts": {}})["accounts"]
     det = load(DET_FILE, {})
     rx = re.compile(status_rx, re.I) if status_rx else None
     todo = [a for k, a in acc.items() if a.get("url") and not a.get("sperre") and not (a.get("sperre_status") or "").strip()
             and (rx is None or rx.search(a.get("status", ""))) and (k not in det or det[k].get("fehler") or det[k].get("v", 1) < 5
-                                                  or (not det[k].get("letzter_kontakt") and det[k].get("land_de") is not False and det[k].get("versuche", 0) < 3))]
+                                                  or (not det[k].get("letzter_kontakt") and det[k].get("land_de") is not False and (retry or det[k].get("versuche", 0) < 3) and not det[k].get("keine_aktivitaet")))]
     todo = todo[:max_n]
     log(f"{len(todo)} Accounts werden gelesen (schon fertig: {len(det)}).")
     with sf.sync_playwright() as p:
@@ -405,6 +405,8 @@ def read_details(max_n, status_rx, log, stop):
                     break
                 if not res.get("letzter_kontakt"):
                     res["versuche"] = det.get(key, {}).get("versuche", 0) + 1
+                    if (res.get("hinweis") or "").startswith("kein Datum gefunden") is False and "0 Zeilen" in (res.get("hinweis") or ""):
+                        res["keine_aktivitaet"] = True  # Verlauf gelesen und leer: nicht endlos wiederholen
                 det[key] = res
                 if i % 5 == 0 or i == len(todo):
                     save(DET_FILE, det)
