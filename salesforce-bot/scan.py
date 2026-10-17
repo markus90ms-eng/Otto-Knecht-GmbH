@@ -429,5 +429,6 @@ def snapshot():
     for k, a in data["accounts"].items():
         d = det.get(k, {})
         rows.append({**a, "letzter_kontakt": d.get("letzter_kontakt", ""), "quelle": d.get("quelle", ""), "gelesen": bool(d), "quellen": d.get("quellen"), "opps": d.get("opps"), "vg": d.get("vg"), "kontakte": d.get("kontakte"), "offen": d.get("offen", []), "offen_blockt": d.get("offen_blockt"), "offen_kommentar": d.get("offen_kommentar", ""), "offen_hinweis": d.get("offen_hinweis", ""), "land_de": d.get("land_de"),
+                     "keine_aktivitaet": bool(d) and not d.get("letzter_kontakt") and not d.get("fehler") and (bool(d.get("keine_aktivitaet")) or "0 Zeilen" in (d.get("hinweis") or "")),
                      "fehler": d.get("fehler", "") or d.get("hinweis", "") if not d.get("letzter_kontakt") else "", "owner": d.get("owner", "")})
     return {"rows": rows, "geprueft_plz": data.get("done", []), "anzahl": len(rows), "gelesen": len(det), "capped": data.get("capped", []), "failed": data.get("failed", [])}
