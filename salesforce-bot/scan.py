@@ -107,11 +107,13 @@ def open_scoped(page, prefix, term_tpl, log, city="", status=None):
     page.goto(url)
     page.wait_for_timeout(6000)
     sf.skip_passkey_prompt(page, url, log)
-    if "login" in page.url:
+    if sf.is_login_url(page.url):
         raise sf.NeedLogin("Sitzung abgelaufen.")
     try:
         page.get_by_role("link", name=re.compile(r"Mehr anzeigen.*Accounts", re.I | re.S)).first.click(timeout=8000)
     except Exception:
+        if sf.is_login_url(page.url) or "lightning.force.com" not in page.url:
+            raise sf.NeedLogin("Sitzung abgelaufen (Weiterleitung auf die Anmeldeseite).")
         if re.search(r"Keine Ergebnisse|keine Treffer|No results", page.evaluate(check.PAGE_TEXT_JS), re.I) or check_no_accounts(page):
             return "leer"
         # Wenige Treffer: Salesforce zeigt die Accounts gleich auf der ersten Trefferseite, ohne 'Mehr anzeigen'.

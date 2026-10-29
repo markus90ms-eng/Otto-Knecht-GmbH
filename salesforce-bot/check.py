@@ -611,7 +611,7 @@ def top_accounts(page, term, log):
     last = -1
     for _ in range(50):  # bis zu ~25 s warten
         page.wait_for_timeout(500)
-        if "login" in page.url:
+        if sf.is_login_url(page.url):
             raise sf.NeedLogin("Sitzung abgelaufen.")
         rows = page.evaluate(ACCOUNTS_JS)
         if rows is not None:
@@ -623,6 +623,8 @@ def top_accounts(page, term, log):
             return []
     if rows is not None:
         return rows
+    if sf.is_login_url(page.url):
+        raise sf.NeedLogin("Sitzung abgelaufen.")
     raise RuntimeError(f"Suchergebnisse nicht lesbar (Seite: {page.url.split('#')[0]}, Titel: {page.title()})")
 
 

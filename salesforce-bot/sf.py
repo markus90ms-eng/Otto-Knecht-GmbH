@@ -66,7 +66,7 @@ def cmd_accounts(args):
         page = ctx.new_page()
         try:
             page.goto(f"{sf_url()}/lightning/o/Account/list?filterName=Recent")
-            if "login" in page.url:
+            if is_login_url(page.url):
                 sys.exit("Sitzung abgelaufen. Bitte neu: python sf.py login")
             page.wait_for_selector("table[role='grid'] tbody tr", timeout=30_000)
             rows = page.locator("table[role='grid'] tbody tr")
@@ -195,6 +195,13 @@ class NeedLogin(Exception):
     pass
 
 
+def is_login_url(url):
+    """Salesforce schickt bei abgelaufener Sitzung auf eine Anmelde-/Weiterleitungsseite (z. B. .../?ec=302&startURL=...)."""
+    u = (url or "").split("#")[0]
+    return ("login" in u or "ec=302" in u or "startURL=" in u or "/identity/" in u or "/secur/" in u
+            or ("my.salesforce.com" in u and "lightning" not in u))
+
+
 def api_base():
     return os.environ.get("SF_API_URL") or sf_url().replace(".lightning.force.com", ".my.salesforce.com")
 
@@ -312,7 +319,7 @@ def collect(headed=False, liste="AllAccounts", log=print):
             log("Öffne Salesforce ...")
             page.goto(f"{sf_url()}/lightning/page/home")
             page.wait_for_timeout(2500)
-            if "login" in page.url:
+            if is_login_url(page.url):
                 raise NeedLogin("Sitzung abgelaufen.")
             try:
                 log("Frage Salesforce direkt ab ...")
@@ -326,7 +333,7 @@ def collect(headed=False, liste="AllAccounts", log=print):
             page.wait_for_timeout(3000)
             skip_passkey_prompt(page, list_url, log)
             log(f"  Seite: {page.url.split('?')[0]} | Titel: {page.title()}")
-            if "login" in page.url:
+            if is_login_url(page.url):
                 raise NeedLogin("Sitzung abgelaufen.")
             try:
                 rows = read_all_rows(page)
